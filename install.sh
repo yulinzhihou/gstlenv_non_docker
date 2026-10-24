@@ -6,9 +6,11 @@
 # 参考 gstlenv(开源 Docker 版) 的命令体系, 提供 tl_* 全局管理命令
 # ------------------------------------------------------------
 # 用法:
-#   bash install.sh                     # 交互模式
+#   bash install.sh                     # 交互模式 (自动检测在线/离线)
 #   TLBB_DB_PASS=xxxx bash install.sh   # 免交互
 #   bash install.sh --dbpass xxxx       # 指定数据库密码
+#   bash install.sh --online            # 强制在线模式 (配置国内源, repo 安装)
+#   bash install.sh --offline           # 强制离线模式 (无网络, 本地 rpm/deb 命令安装)
 # ------------------------------------------------------------
 # 支持系统 (自动识别, 一键安装):
 #   RHEL 系: CentOS 5/6/7/8/9/10 | Rocky/Alma 8/9 | Oracle Linux
@@ -91,6 +93,47 @@ finish_banner() {
     echo "=============================================================="
 }
 
+# ---------- 网络检测与离线模式判定 ----------
+detect_net() {
+    # 显式指定模式优先
+    [ -n "${TLBB_OFFLINE_MODE}" ] && return 0
+    TLBB_OFFLINE_MODE=0
+    # 尝试访问国内镜像 (3 秒超时), 失败则自动进入离线模式
+    if command -v curl >/dev/null 2>&1; then
+        curl -sI --connect-timeout 3 --max-time 5 https://mirrors.aliyun.com >/dev/null 2>&1 || TLBB_OFFLINE_MODE=1
+    elif command -v wget >/dev/null 2>&1; then
+        wget -T 5 -O /dev/null -q https://mirrors.aliyun.com >/dev/null 2>&1 || TLBB_OFFLINE_MODE=1
+    else
+        TLBB_OFFLINE_MODE=1   # 无网络工具, 视为离线
+    fi
+}
+
+# ---------- 离线完整性检查 ----------
+check_offline_complete() {
+    [ "${TLBB_OFFLINE_MODE:-0}" != "1" ] && return 0
+    log "离线模式: 检查本地组件完整性..."
+    local need=""
+    case "$SYS_FAMILY" in
+        rhel)
+            case "$SYS_BRANCH" in
+                el5)  [ -f "$TLBB_OFFLINE_DIR/el5/unixODBC-2.2.11-el5.rpm" ] || need="el5 组件";;
+                el6)  [ -f "$TLBB_OFFLINE_DIR/el6/unixODBC.rpm" ] || need="el6 组件";;
+                el7)  [ -f "$TLBB_OFFLINE_DIR/el7/MySQL.tar.gz" ] || need="el7 组件";;
+                el8|el9|el10)
+                    [ -d "$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH" ] || need="el${SYS_BRANCH#el} 的 rpm-packages (数据库/unixODBC)"
+                    ;;
+            esac
+            ;;
+        debian)
+            [ -d "$TLBB_OFFLINE_DIR/deb-packages" ] || need="deb-packages (数据库/兼容库)"
+            ;;
+    esac
+    if [ -n "$need" ]; then
+        warn "离线模式缺少: $need"
+        warn "请使用 src/scripts/pack_offline.sh 在联网机器上补齐, 或改用 --online"
+    fi
+}
+
 # ---------- 主流程 ----------
 main() {
     # 解析参数
@@ -98,6 +141,8 @@ main() {
         case "$1" in
             --dbpass) TLBB_DB_PASS="$2"; shift 2;;
             --offline-dir) TLBB_OFFLINE_DIR="$2"; shift 2;;
+            --online)  TLBB_OFFLINE_MODE=0; shift;;
+            --offline) TLBB_OFFLINE_MODE=1; shift;;
             -h|--help)
                 grep -E '^#   ' "$0" | sed 's/^#   //'; exit 0;;
             *) shift;;
@@ -113,6 +158,14 @@ main() {
     if [ -z "$TLBB_OFFLINE_DIR" ]; then
         TLBB_OFFLINE_DIR="$PKG_ROOT/offline"
         [ -d "$TLBB_OFFLINE_DIR" ] && log "离线组件目录: $TLBB_OFFLINE_DIR" || warn "未找到 offline/ 目录"
+    fi
+
+    detect_net
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        log "运行模式: [离线] 无网络, 使用本地 rpm/deb 命令安装组件"
+        check_offline_complete
+    else
+        log "运行模式: [在线] 配置国内源, 使用 repo 安装组件"
     fi
 
     case "$SYS_FAMILY" in

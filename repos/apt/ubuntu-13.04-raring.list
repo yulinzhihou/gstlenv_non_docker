@@ -1,0 +1,7 @@
+﻿# Ubuntu raring (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ raring main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ raring-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ raring-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ raring main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ raring-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ raring-security main universe restricted multiverse

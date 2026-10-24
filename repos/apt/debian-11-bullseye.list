@@ -1,0 +1,6 @@
+﻿# Debian 11 bullseye (LTS 至 2026-08) - 阿里云 + 归档兜底
+deb https://mirrors.aliyun.com/debian/ bullseye main contrib non-free
+deb https://mirrors.aliyun.com/debian/ bullseye-updates main contrib non-free
+deb https://mirrors.aliyun.com/debian-security/ bullseye-security main contrib non-free
+# 归档兜底 (LTS 结束后自动可用)
+deb http://archive.debian.org/debian/ bullseye main contrib non-free

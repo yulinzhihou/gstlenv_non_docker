@@ -1,0 +1,3 @@
+﻿# Debian trixie-next (预发布/未发布) - 安装器将自动回退到最新稳定版代号
+# 此文件为占位: 当系统实际代号为 trixie-next 时, 安装器使用:
+#   deb https://mirrors.aliyun.com/debian/ trixie-next main contrib non-free

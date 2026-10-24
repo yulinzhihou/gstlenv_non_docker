@@ -1,0 +1,7 @@
+﻿# Ubuntu vivid (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ vivid main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ vivid-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ vivid-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ vivid main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ vivid-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ vivid-security main universe restricted multiverse

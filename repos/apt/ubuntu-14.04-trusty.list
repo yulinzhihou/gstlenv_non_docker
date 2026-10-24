@@ -1,0 +1,7 @@
+﻿# Ubuntu trusty (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ trusty main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ trusty-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ trusty-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ trusty main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ trusty-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ trusty-security main universe restricted multiverse

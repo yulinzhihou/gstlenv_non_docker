@@ -51,14 +51,17 @@ src/
 │   ├── detect.sh            系统识别（发行版 × 版本 → 安装家族）
 │   ├── rhel/install.sh      RHEL 系安装流程（el5~el10 + 云厂商）
 │   └── debian/install.sh    Debian 系安装流程（Ubuntu/Debian 全版本）
-├── repos/                   ★ 国内 yum/dnf 源（18 个 .repo，按版本区分）
-├── offline/                 ★ 离线组件（按版本区分）
+├── repos/                   ★ 国内安装源（RHEL 系 18 个 .repo + Debian 系 apt/ 34 个源，按版本区分）
+│   ├── centos5.repo ...      RHEL 系 yum/dnf 源（centos5~10 + 云厂商）
+│   └── apt/                  Debian 系 apt 源（ubuntu-*.list ×25 + debian-*.list ×9）
+├── offline/                 ★ 离线组件（按版本区分，不入 git）
 │   ├── el5/                 CentOS 5：unixODBC/mysql-odbc rpm + conf
 │   ├── el6/                 CentOS 6：unixODBC.rpm + mysql-odbc.rpm + libmyodbc3
 │   ├── el7/                 CentOS 7：MySQL 5.1 rpm + unixODBC 2.2.11 + 32/64 位驱动
 │   ├── el8_el9_el10/        现代 RHEL：32 位驱动 + unixODBC 源码
 │   ├── deb-common/          Debian 系：32 位驱动 + unixODBC 源码 + 备用驱动
 │   └── sql/                 tlbbdb.sql / web.sql（全系通用）
+├── offline-packs/           ★ 版本化离线压缩包（scripts/pack_offline.sh 生成，不入 git）
 ├── cmd/                     ★ tl_* 全局管理命令（参考 gstlenv，反 Docker 化）
 │   ├── tl.sh                总命令菜单
 │   ├── untar.sh / setini.sh / runtlbb.sh / runtop.sh
@@ -77,6 +80,28 @@ src/
 ---
 
 ## 三、快速开始
+
+### 3.0 在线 / 离线双模式（重要）
+
+安装器支持两种运行模式，自动检测或手动指定：
+
+```bash
+# 在线模式（默认）：自动检测网络 → 配置国内源 → 使用 repo 安装组件
+bash install.sh
+# 强制在线：显式指定
+bash install.sh --online
+
+# 离线模式：无网络虚拟机 / 单机，使用本地 rpm/deb 命令安装组件
+bash install.sh --offline
+# 自动模式：检测不到网络时自动进入离线模式
+bash install.sh
+```
+
+**离线模式组件来源**（按发行版版本组织）：
+- `offline/el5|el6|el7/`：内置驱动 + unixODBC + MySQL（el7）离线包
+- `offline/rpm-packages/<elX>/`：联网机器上用 `yumdownloader --resolve` 下载的数据库/兼容库 rpm（el8+ 离线必需）
+- `offline/deb-packages/`：联网机器上用 `apt-get download` 下载的 deb 包（Debian 系离线必需）
+- 生成工具：`bash scripts/pack_offline.sh`（打包内置组件）/ `--full <版本>`（联网下载依赖）
 
 ### 3.1 一键安装（推荐）
 
@@ -154,7 +179,30 @@ tl_remove                 # 卸载
 
 ---
 
-## 六、文档导航
+## 六、离线包管理（不进 git 版本管理）
+
+离线组件为大体积二进制，**不进入 git 版本管理**（见 `.gitignore`），按发行版版本独立打包：
+
+```bash
+# 1) 打包内置离线组件为版本化压缩包（el5/el6/el7/el8_9_10/deb/sql）
+bash scripts/pack_offline.sh
+# 输出: offline-packs/el5-offline.tar.gz, el7-offline.tar.gz, ...
+
+# 2) 在联网机器上生成某版本完整离线包（数据库+兼容库+驱动）
+bash scripts/pack_offline.sh --full el7     # RHEL: yumdownloader --resolve
+bash scripts/pack_offline.sh --full el8
+bash scripts/pack_offline.sh --full ubuntu24 # Debian: apt-get download
+# 下载产物放入 offline/rpm-packages/<版本>/ 或 offline/deb-packages/
+
+# 3) 在目标服务器上解压离线包
+bash scripts/pack_offline.sh install el7
+```
+
+> 说明：仓库 clone 后需先通过 `pack_offline.sh` 重新生成 offline/（或直接从 `offline-packs/` 解压），再执行安装。
+
+---
+
+## 七、文档导航
 
 - [安装说明](docs/安装说明.md) — 系统要求、安装前准备、安装步骤、验证
 - [环境创建说明](docs/环境创建说明.md) — 从零到开服的完整流程

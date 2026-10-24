@@ -1,0 +1,10 @@
+﻿# Ubuntu plucky - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ plucky main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ plucky-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ plucky-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ plucky-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ plucky main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ plucky-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ plucky-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ plucky main universe restricted multiverse

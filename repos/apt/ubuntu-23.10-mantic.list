@@ -1,0 +1,7 @@
+﻿# Ubuntu mantic (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ mantic main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ mantic-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ mantic-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ mantic main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ mantic-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ mantic-security main universe restricted multiverse

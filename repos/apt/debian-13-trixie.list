@@ -1,0 +1,6 @@
+﻿# Debian trixie - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/debian/ trixie main contrib non-free
+deb https://mirrors.aliyun.com/debian/ trixie-updates main contrib non-free
+deb https://mirrors.aliyun.com/debian-security/ trixie-security main contrib non-free
+deb https://mirrors.cloud.tencent.com/debian/ trixie main contrib non-free
+deb https://mirrors.huaweicloud.com/debian/ trixie main contrib non-free

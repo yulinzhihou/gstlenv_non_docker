@@ -1,0 +1,10 @@
+﻿# Ubuntu resolute - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ resolute main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ resolute-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ resolute-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ resolute-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ resolute main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ resolute-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ resolute-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ resolute main universe restricted multiverse

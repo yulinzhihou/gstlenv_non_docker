@@ -1,0 +1,7 @@
+﻿# Ubuntu disco (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ disco main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ disco-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ disco-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ disco main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ disco-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ disco-security main universe restricted multiverse

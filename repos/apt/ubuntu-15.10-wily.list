@@ -1,0 +1,7 @@
+﻿# Ubuntu wily (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ wily main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ wily-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ wily-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ wily main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ wily-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ wily-security main universe restricted multiverse

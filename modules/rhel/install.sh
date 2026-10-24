@@ -20,6 +20,8 @@ rhel_pkg_install() {
 
 # ---------- 配置国内 yum/dnf 源 ----------
 rhel_config_repo() {
+    # 离线模式: 跳过源配置, 直接使用本地安装包
+    [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && { log "离线模式: 跳过 yum/dnf 源配置, 使用本地 rpm 安装包"; return 0; }
     local repofile=""
     case "$SYS_ID:$SYS_BRANCH" in
         centos:el5)    repofile="centos5.repo";;
@@ -68,6 +70,18 @@ rhel_config_repo() {
 # ---------- 安装 32 位兼容库 ----------
 rhel_install_compat() {
     log "安装 32 位兼容库 (glibc/libstdc++/libnsl/libcrypt)..."
+    # 离线模式: 尝试本地 rpm 包目录 (offline/rpm-packages/<elX>/), 否则仅提示
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
+        if [ -d "$rdir" ] && ls "$rdir"/*.rpm >/dev/null 2>&1; then
+            for r in "$rdir"/*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
+            log "离线兼容库安装完成 (来自 $rdir)"
+        else
+            warn "离线模式未找到兼容库 rpm (offline/rpm-packages/$SYS_BRANCH/), 32 位库可能缺失"
+            warn "提示: 联网机器上 'yumdownloader --resolve glibc.i686' 等获取后放入该目录"
+        fi
+        return 0
+    fi
     case "$SYS_BRANCH" in
         el5)
             rhel_pkg_install glibc.i686 libstdc++ libstdc++.i686 gcc
@@ -94,6 +108,19 @@ rhel_install_compat() {
 
 # ---------- 安装数据库 ----------
 rhel_install_db() {
+    # 离线模式: 优先本地 rpm 包目录, el7 已有内置 MySQL.tar.gz
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "$SYS_BRANCH" != "el7" ]; then
+        local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
+        if [ -d "$rdir" ] && ls "$rdir"/*mysql*.rpm >/dev/null 2>&1; then
+            log "离线安装数据库 (rpm: $rdir)..."
+            rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || \
+                { warn "数据库 rpm 安装失败, 尝试依赖补齐"; rpm -ivh "$rdir"/*.rpm >/dev/null 2>&1 || die "离线数据库安装失败"; }
+            return 0
+        fi
+        warn "离线模式未找到数据库 rpm (offline/rpm-packages/$SYS_BRANCH/), 数据库需联网安装"
+        warn "提示: 联网机器上 'yumdownloader --resolve mariadb-server' 获取后放入该目录"
+        die "离线数据库包缺失, 安装中止 (或将 offline/rpm-packages/$SYS_BRANCH/ 补齐后重试)"
+    fi
     case "$SYS_BRANCH" in
         el5)
             log "安装 MySQL (yum 源, vault 归档)..."
@@ -250,10 +277,21 @@ rhel_install_odbc() {
             fi
             ;;
         el8|el9|el10)
-            log "安装 unixODBC (源) + 离线 32 位 MySQL ODBC 3.51 驱动..."
-            local m; m=$(rhel_pkgmgr)
-            $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
-            $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败"
+            log "安装 unixODBC (源/离线包) + 离线 32 位 MySQL ODBC 3.51 驱动..."
+            # 离线模式: 从 rpm-packages 本地安装 unixODBC
+            if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+                local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
+                if [ -d "$rdir" ] && ls "$rdir"/unixODBC*.rpm >/dev/null 2>&1; then
+                    for r in "$rdir"/unixODBC*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
+                    log "离线 unixODBC 安装完成 (来自 $rdir)"
+                else
+                    warn "离线模式未找到 unixODBC rpm (offline/rpm-packages/$SYS_BRANCH/), isql 可能不可用"
+                fi
+            else
+                local m; m=$(rhel_pkgmgr)
+                $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
+                $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败"
+            fi
             # 32 位驱动复制到 /usr/lib
             local drv; drv=$(off_get el8_el9_el10/libmyodbc3-32bit libmyodbc3-3.51.27.so)
             [ -z "$drv" ] && drv=$(find / -name "libmyodbc3-3.51.27.so" 2>/dev/null | head -1)

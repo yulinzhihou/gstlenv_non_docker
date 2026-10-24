@@ -1,0 +1,7 @@
+﻿# Ubuntu eoan (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ eoan main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ eoan-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ eoan-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ eoan main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ eoan-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ eoan-security main universe restricted multiverse
