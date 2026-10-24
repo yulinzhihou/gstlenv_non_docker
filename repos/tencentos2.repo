@@ -1,0 +1,18 @@
+﻿# 腾讯云 TencentOS Server 2 (RHEL7 兼容)
+[tencentos2-os]
+name=TencentOS-2 - OS
+baseurl=https://mirrors.cloud.tencent.com/tencentos/2.4/tlinux-os/$basearch/
+gpgcheck=0
+enabled=1
+
+[tencentos2-updates]
+name=TencentOS-2 - Updates
+baseurl=https://mirrors.cloud.tencent.com/tencentos/2.4/tlinux-updates/$basearch/
+gpgcheck=0
+enabled=1
+
+[tencentos2-extras]
+name=TencentOS-2 - Extras
+baseurl=https://mirrors.cloud.tencent.com/tencentos/2.4/tlinux-extras/$basearch/
+gpgcheck=0
+enabled=1

@@ -1,0 +1,7 @@
+﻿# Ubuntu lunar (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ lunar main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ lunar-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ lunar-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ lunar main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ lunar-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ lunar-security main universe restricted multiverse

@@ -1,0 +1,27 @@
+﻿# CentOS 7.x (EOL) - 阿里云 vault 归档源
+[base]
+name=CentOS-7 - Base - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/7.9.2009/os/$basearch/
+        https://mirrors.cloud.tencent.com/centos/7/os/$basearch/
+        http://mirrors.163.com/centos-vault/7.9.2009/os/$basearch/
+        http://mirrors.sohu.com/centos/7/os/$basearch/
+gpgcheck=0
+enabled=1
+
+[updates]
+name=CentOS-7 - Updates - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/7.9.2009/updates/$basearch/
+gpgcheck=0
+enabled=1
+
+[extras]
+name=CentOS-7 - Extras - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/7.9.2009/extras/$basearch/
+gpgcheck=0
+enabled=1
+
+[centosplus]
+name=CentOS-7 - Plus - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/7.9.2009/centosplus/$basearch/
+gpgcheck=0
+enabled=1

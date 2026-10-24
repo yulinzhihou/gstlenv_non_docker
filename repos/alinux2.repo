@@ -1,0 +1,18 @@
+﻿# 阿里云 Alinux 2 (RHEL7 兼容) - 官方镜像源
+[alinux2-os]
+name=Alinux-2 - OS
+baseurl=https://mirrors.aliyun.com/alinux/2/os/$basearch/
+gpgcheck=0
+enabled=1
+
+[alinux2-updates]
+name=Alinux-2 - Updates
+baseurl=https://mirrors.aliyun.com/alinux/2/updates/$basearch/
+gpgcheck=0
+enabled=1
+
+[alinux2-extras]
+name=Alinux-2 - Extras
+baseurl=https://mirrors.aliyun.com/alinux/2/extras/$basearch/
+gpgcheck=0
+enabled=1

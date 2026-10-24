@@ -1,0 +1,18 @@
+﻿# 腾讯云 TencentOS Server 3 (RHEL8 兼容)
+[tencentos3-baseos]
+name=TencentOS-3 - BaseOS
+baseurl=https://mirrors.cloud.tencent.com/tencentos/3.1/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[tencentos3-appstream]
+name=TencentOS-3 - AppStream
+baseurl=https://mirrors.cloud.tencent.com/tencentos/3.1/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[tencentos3-extras]
+name=TencentOS-3 - Extras
+baseurl=https://mirrors.cloud.tencent.com/tencentos/3.1/extras/$basearch/os/
+gpgcheck=0
+enabled=1

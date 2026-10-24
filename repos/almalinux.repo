@@ -1,0 +1,12 @@
+﻿# AlmaLinux 8/9 - 阿里云源 (按  自动)
+[alma-baseos]
+name=AlmaLinux-$releasever - BaseOS
+baseurl=https://mirrors.aliyun.com/almalinux/$releasever/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[alma-appstream]
+name=AlmaLinux-$releasever - AppStream
+baseurl=https://mirrors.aliyun.com/almalinux/$releasever/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1

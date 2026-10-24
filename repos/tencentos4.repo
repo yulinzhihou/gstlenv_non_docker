@@ -1,0 +1,12 @@
+﻿# 腾讯云 TencentOS Server 4 (RHEL9 兼容)
+[tencentos4-baseos]
+name=TencentOS-4 - BaseOS
+baseurl=https://mirrors.cloud.tencent.com/tencentos/4.6/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[tencentos4-appstream]
+name=TencentOS-4 - AppStream
+baseurl=https://mirrors.cloud.tencent.com/tencentos/4.6/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1

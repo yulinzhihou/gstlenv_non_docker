@@ -1,0 +1,7 @@
+﻿# Ubuntu groovy (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ groovy main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ groovy-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ groovy-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ groovy main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ groovy-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ groovy-security main universe restricted multiverse

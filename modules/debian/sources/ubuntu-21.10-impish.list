@@ -1,0 +1,7 @@
+﻿# Ubuntu impish (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ impish main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ impish-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ impish-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ impish main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ impish-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ impish-security main universe restricted multiverse

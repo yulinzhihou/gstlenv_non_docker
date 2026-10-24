@@ -1,0 +1,7 @@
+﻿# Ubuntu artful (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ artful main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ artful-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ artful-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ artful main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ artful-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ artful-security main universe restricted multiverse

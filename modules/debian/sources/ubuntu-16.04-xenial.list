@@ -1,0 +1,7 @@
+﻿# Ubuntu xenial (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ xenial main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ xenial-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ xenial-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ xenial main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ xenial-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ xenial-security main universe restricted multiverse

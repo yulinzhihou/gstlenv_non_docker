@@ -1,0 +1,7 @@
+﻿# Ubuntu kinetic (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ kinetic main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ kinetic-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ kinetic-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ kinetic main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ kinetic-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ kinetic-security main universe restricted multiverse

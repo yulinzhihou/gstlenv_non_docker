@@ -1,0 +1,27 @@
+﻿# CentOS Stream 10 - 阿里云源 (dnf)
+[baseos]
+name=CentOS-Stream-10 - BaseOS - aliyun
+baseurl=https://mirrors.aliyun.com/centos-stream/10-stream/BaseOS/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-stream/10-stream/BaseOS/$basearch/os/
+        https://mirrors.huaweicloud.com/centos-stream/10-stream/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[appstream]
+name=CentOS-Stream-10 - AppStream - aliyun
+baseurl=https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-stream/10-stream/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[extras]
+name=CentOS-Stream-10 - Extras - aliyun
+baseurl=https://mirrors.aliyun.com/centos-stream/10-stream/extras/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[crb]
+name=CentOS-Stream-10 - CRB - aliyun
+baseurl=https://mirrors.aliyun.com/centos-stream/10-stream/CRB/$basearch/os/
+gpgcheck=0
+enabled=1

@@ -1,0 +1,10 @@
+﻿# Ubuntu focal - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ focal main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ focal-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ focal-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ focal-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ focal main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ focal-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ focal-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ focal main universe restricted multiverse

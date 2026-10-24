@@ -1,0 +1,7 @@
+﻿# Ubuntu bionic (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ bionic main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ bionic-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ bionic-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ bionic main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ bionic-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ bionic-security main universe restricted multiverse

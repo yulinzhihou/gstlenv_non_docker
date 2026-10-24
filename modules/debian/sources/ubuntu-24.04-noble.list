@@ -1,0 +1,10 @@
+﻿# Ubuntu noble - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ noble main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ noble-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ noble-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ noble-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ noble main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ noble-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ noble-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ noble main universe restricted multiverse

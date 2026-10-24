@@ -1,0 +1,10 @@
+﻿# Ubuntu jammy - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ jammy main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ jammy-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ jammy main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ jammy-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ jammy-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ jammy main universe restricted multiverse

@@ -1,0 +1,6 @@
+﻿# 华为 EulerOS 2.10 (RHEL7 兼容)
+[euler-os]
+name=EulerOS-2.10 - OS
+baseurl=https://mirrors.huaweicloud.com/euler/2.10/os/$basearch/
+gpgcheck=0
+enabled=1

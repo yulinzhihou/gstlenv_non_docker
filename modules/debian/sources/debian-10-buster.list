@@ -1,0 +1,6 @@
+﻿# Debian 10 buster (EOL) - 归档源
+deb http://archive.debian.org/debian/ buster main contrib non-free
+deb http://archive.debian.org/debian/ buster-updates main contrib non-free
+deb http://archive.debian.org/debian-security/ buster/updates main contrib non-free
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-archive/debian/ buster main contrib non-free
+deb https://mirrors.tuna.tsinghua.edu.cn/debian-archive/debian-security/ buster/updates main contrib non-free

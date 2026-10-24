@@ -1,0 +1,18 @@
+﻿# Rocky Linux 8 - 阿里云源
+[rocky8-baseos]
+name=Rocky-8 - BaseOS
+baseurl=https://mirrors.aliyun.com/rockylinux/8/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[rocky8-appstream]
+name=Rocky-8 - AppStream
+baseurl=https://mirrors.aliyun.com/rockylinux/8/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[rocky8-extras]
+name=Rocky-8 - Extras
+baseurl=https://mirrors.aliyun.com/rockylinux/8/extras/$basearch/os/
+gpgcheck=0
+enabled=1

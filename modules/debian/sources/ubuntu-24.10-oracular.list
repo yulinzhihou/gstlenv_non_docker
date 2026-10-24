@@ -1,0 +1,7 @@
+﻿# Ubuntu oracular (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ oracular main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ oracular-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ oracular-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ oracular main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ oracular-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ oracular-security main universe restricted multiverse

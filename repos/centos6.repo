@@ -1,0 +1,21 @@
+﻿# CentOS 6.x (EOL) - 阿里云 vault 归档源
+[base]
+name=CentOS-6 - Base - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/6.10/os/$basearch/
+        http://mirrors.163.com/centos-vault/6.10/os/$basearch/
+gpgcheck=0
+enabled=1
+
+[updates]
+name=CentOS-6 - Updates - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/6.10/updates/$basearch/
+        http://mirrors.163.com/centos-vault/6.10/updates/$basearch/
+gpgcheck=0
+enabled=1
+
+[extras]
+name=CentOS-6 - Extras - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/6.10/extras/$basearch/
+        http://mirrors.163.com/centos-vault/6.10/extras/$basearch/
+gpgcheck=0
+enabled=1

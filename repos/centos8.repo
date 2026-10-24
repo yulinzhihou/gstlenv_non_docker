@@ -1,0 +1,27 @@
+﻿# CentOS 8.x (EOL) - 阿里云 vault 归档源 (dnf)
+[baseos]
+name=CentOS-8 - BaseOS - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
+        http://mirrors.163.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[appstream]
+name=CentOS-8 - AppStream - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[powertools]
+name=CentOS-8 - PowerTools - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/PowerTools/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[extras]
+name=CentOS-8 - Extras - aliyun-vault
+baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/extras/$basearch/os/
+gpgcheck=0
+enabled=1

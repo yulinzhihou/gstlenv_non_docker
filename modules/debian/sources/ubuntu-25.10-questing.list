@@ -1,0 +1,10 @@
+﻿# Ubuntu questing - 国内源 (阿里云优先)
+deb https://mirrors.aliyun.com/ubuntu/ questing main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ questing-updates main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ questing-security main universe restricted multiverse
+deb https://mirrors.aliyun.com/ubuntu/ questing-backports main universe restricted multiverse
+# 备用源: 腾讯云 / 华为云
+deb https://mirrors.cloud.tencent.com/ubuntu/ questing main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ questing-updates main universe restricted multiverse
+deb https://mirrors.cloud.tencent.com/ubuntu/ questing-security main universe restricted multiverse
+deb https://mirrors.huaweicloud.com/ubuntu/ questing main universe restricted multiverse

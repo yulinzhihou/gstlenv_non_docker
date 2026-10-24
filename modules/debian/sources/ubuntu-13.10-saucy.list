@@ -1,0 +1,7 @@
+﻿# Ubuntu saucy (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ saucy main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ saucy-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ saucy-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ saucy main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ saucy-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ saucy-security main universe restricted multiverse

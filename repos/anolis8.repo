@@ -1,0 +1,18 @@
+﻿# 阿里云 OpenAnolis 8 (RHEL8 兼容)
+[anolis8-baseos]
+name=Anolis-8 - BaseOS
+baseurl=https://mirrors.aliyun.com/anolis/8/BaseOS/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[anolis8-appstream]
+name=Anolis-8 - AppStream
+baseurl=https://mirrors.aliyun.com/anolis/8/AppStream/$basearch/os/
+gpgcheck=0
+enabled=1
+
+[anolis8-extras]
+name=Anolis-8 - Extras
+baseurl=https://mirrors.aliyun.com/anolis/8/extras/$basearch/os/
+gpgcheck=0
+enabled=1

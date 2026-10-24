@@ -1,0 +1,25 @@
+# CentOS 5.11 国内归档源 (已 EOL, 官方源下线, 使用阿里云 centos-vault)
+# 说明: CentOS 5 的 yum 对 https 兼容性差, 使用 http
+[base]
+name=CentOS-5.11 - Base
+baseurl=http://mirrors.aliyun.com/centos-vault/5.11/os/$basearch/
+gpgcheck=0
+enabled=1
+
+[updates]
+name=CentOS-5.11 - Updates
+baseurl=http://mirrors.aliyun.com/centos-vault/5.11/updates/$basearch/
+gpgcheck=0
+enabled=1
+
+[extras]
+name=CentOS-5.11 - Extras
+baseurl=http://mirrors.aliyun.com/centos-vault/5.11/extras/$basearch/
+gpgcheck=0
+enabled=1
+
+[centosplus]
+name=CentOS-5.11 - Plus
+baseurl=http://mirrors.aliyun.com/centos-vault/5.11/centosplus/$basearch/
+gpgcheck=0
+enabled=0

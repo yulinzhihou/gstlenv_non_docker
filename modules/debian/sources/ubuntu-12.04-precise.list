@@ -1,0 +1,7 @@
+﻿# Ubuntu precise (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ precise main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ precise-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ precise-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ precise main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ precise-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ precise-security main universe restricted multiverse

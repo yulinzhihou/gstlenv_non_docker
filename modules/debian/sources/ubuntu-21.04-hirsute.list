@@ -1,0 +1,7 @@
+﻿# Ubuntu hirsute (EOL) - 归档源 (old-releases + 清华 old-releases)
+deb http://old-releases.ubuntu.com/ubuntu/ hirsute main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ hirsute-updates main universe restricted multiverse
+deb http://old-releases.ubuntu.com/ubuntu/ hirsute-security main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ hirsute main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ hirsute-updates main universe restricted multiverse
+deb https://mirrors.tuna.tsinghua.edu.cn/ubuntu-old-releases/ hirsute-security main universe restricted multiverse
