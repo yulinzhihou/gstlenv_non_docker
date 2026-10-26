@@ -149,19 +149,43 @@ tl_remove                 # 卸载
 
 ---
 
-## 四、tl_* 命令手册（反 Docker 化对照）
+## 四、命令手册（gstlenv 原命令名，反 Docker 化对照）
 
-| 命令 | 原 gstlenv（Docker） | 本包（原生） |
-|---|---|---|
-| tl_untar | docker exec 解压 | tar/unzip 解压到 /home/tlbb |
-| tl_setini | docker exec 写 ini | sed 写 ServerInfo.ini |
-| tl_runtlbb | docker start 容器 | nohup bash run.sh 后台启动 |
-| tl_backup | docker exec mysqldump | 本机 mysqldump |
-| tl_restore | docker exec mysql | 本机 mysql 导入 |
-| tl_reset | docker exec 删库重导 | 本机 drop/create + 导入 |
-| tl_setvalid / tl_setpoint | docker exec SQL | 本机 mysql 执行 SQL |
-| tl_curgs | docker inspect | 读取 /root/.tlbb/tlbb.env + odbc.ini |
-| tl_swap / tl_close / tl_gslog 等 | 容器操作 | 原生系统操作 |
+> 命令以 **gstlenv 原命令名**部署到 `/usr/local/bin`（untar/setini/runtlbb/.../gs/link/gstl），同时保留 `tl_` 前缀兼容名（tl_untar/tl_setini...）。帮助入口：`gs`（gstlenv 同款菜单）与 `tl`（菜单）。
+
+| 编号 | 命令 | 原 gstlenv（Docker） | 本包（原生） |
+|---|---|---|---|
+| 01 | untar | docker exec 解压 | tar/unzip 解压到 /home/tlbb |
+| 02 | setini | docker exec 写 ini | sed 写 ServerInfo.ini |
+| 03 | runtlbb | docker start 容器 | nohup bash run.sh 后台启动 |
+| 04 | runtop | docker ps 容器状态 | 检查 ShareMemory/Login/World/Server 进程 |
+| 05 | link | docker-compose exec 进容器 | 直接进入 /home/tlbb 服务端目录（原生无容器） |
+| 06 | swap | 容器内加 swap | 本机增加虚拟内存 |
+| 07 | rebuild | 重建容器 | 重构本机环境（备份→重建→还原） |
+| 08 | remove | docker rm 容器 | 移除本机环境与命令 |
+| 09 | setconfig | 重写容器配置 | 重写 /root/.tlbb/tlbb.env 端口/密码 + 改数据库密码 |
+| 10 | change | 容器换端 | 本机备份换端 |
+| 11 | restart | docker restart | 本机重启数据库+服务端 |
+| 12 | gsbak | 容器内定时备份 | crontab 定时 mysqldump + 版本备份 |
+| 13 | upcmd | gitee 拉取最新命令 | 从环境包 cmd/ 重新部署命令到 /usr/local/bin |
+| 14 | upgm | nginx 容器 + DBConfig.php | 生成 /tlgame/www/gm + DBConfig.php |
+| 15 | upow | nginx 容器站点 | 创建 /tlgame/www/ow 开服网站目录 |
+| 16 | step | 容器内分步启动 | 解析 run.sh 分步启动进程 |
+| 17 | gstl | 下载镜像 compose up | 检查环境 → 显示配置(curgs) + 虚拟内存(swap) |
+| 18 | backup | docker exec mysqldump | 本机 mysqldump |
+| 19 | close | docker stop | 本机关服 |
+| 20 | gslog | docker logs | 本机日志 |
+| 21 | rmlog | 容器内删除日志 | 本机删除日志 |
+| 22 | curgs | docker inspect | 读取 /root/.tlbb/tlbb.env + odbc.ini |
+| 23 | setpoint | docker exec SQL | 本机 mysql 执行 SQL |
+| 24 | reset | docker exec 删库重导 | 本机 drop/create + 导入 |
+| 25 | setvalid | docker exec SQL | 本机 mysql 执行 SQL |
+| 26 | restore | docker exec mysql | 本机 mysql 导入 |
+| 27 | delbak | 容器内删除备份 | 本机删除备份 |
+| 28 | gsfix | 重装 docker + 环境 | 修复本机组件/驱动/数据库 |
+| 29 | logbak | 容器内定时日志备份 | crontab 定时备份日志 |
+| - | color | 容器内颜色库 | /usr/local/bin/color 公共库 |
+| - | gs | 帮助菜单 | 同款帮助菜单（gs / gs 01 / gs untar） |
 
 ---
 

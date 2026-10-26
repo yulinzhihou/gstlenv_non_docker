@@ -61,20 +61,28 @@ EOF
 
 # ---------- 部署全局管理命令 (参考 gstlenv set_command) ----------
 install_cmd() {
-    log "部署 tl_* 全局管理命令..."
+    log "部署全局管理命令 (gs 原名 + tl_ 兼容名)..."
     local cmd_dir="$PKG_ROOT/cmd"
     [ -d "$cmd_dir" ] || { warn "未找到 cmd/ 目录, 跳过命令安装"; return 0; }
+    local count=0
     for f in "$cmd_dir"/*.sh; do
         [ -f "$f" ] || continue
         local name; name=$(basename "$f" .sh)
-        # 总菜单命令安装为 tl, 其余安装为 tl_<name>
-        if [ "$name" = "tl" ]; then
-            cp -f "$f" /usr/local/bin/tl && chmod +x /usr/local/bin/tl
-        else
+        # color 公共库 -> /usr/local/bin/color
+        if [ "$name" = "color" ]; then
+            cp -f "$f" /usr/local/bin/color && chmod +x /usr/local/bin/color
+            count=$((count + 1))
+            continue
+        fi
+        # gs 原名 (对齐 gstlenv 命令体系: untar/setini/runtlbb/...)
+        cp -f "$f" "/usr/local/bin/${name}" && chmod +x "/usr/local/bin/${name}"
+        # tl_ 前缀兼容名 (tl 菜单除外)
+        if [ "$name" != "tl" ]; then
             cp -f "$f" "/usr/local/bin/tl_${name}" && chmod +x "/usr/local/bin/tl_${name}"
         fi
+        count=$((count + 1))
     done
-    log "命令安装完成: 输入 tl 查看全部命令"
+    log "命令安装完成: 共 ${count} 个命令 (输入 gs 查看帮助 / tl 查看菜单)"
 }
 
 # ---------- 完成横幅 ----------
@@ -86,9 +94,9 @@ finish_banner() {
     echo "  数据库 : root / ${TLBB_DB_PASS}   库: tlbbdb, web"
     echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
     echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
-    echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: tl_untar"
-    echo "  启动   : tl_setini && tl_runtlbb   状态: tl_runtop"
-    echo "  帮助   : tl"
+    echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar (或 tl_untar)"
+    echo "  启动   : setini && runtlbb   状态: runtop (或 tl_setini/tl_runtlbb)"
+    echo "  帮助   : gs (命令帮助)  /  tl (菜单)"
     echo "  端口   : 3306 / 7777 / 7778 / 9470 (请在安全组放行)"
     echo "=============================================================="
 }
