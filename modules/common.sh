@@ -26,6 +26,18 @@ info() { echo -e "${C_BLUE}[信息]${C_NONE} $*"; }
 
 die()  { err "$*"; exit 1; }
 
+# ---------- 品牌广告横幅 (GS游享网 · 天龙环境) ----------
+brand_banner() {
+    echo ""
+    echo -e "${C_GREEN}============================================================${C_NONE}"
+    echo -e "${C_GREEN}   GS游享网 · 天龙八部万能环境${C_NONE}"
+    echo -e "${C_GREEN}   天龙八部怀旧/经典端环境一键部署 | 全网首发万能安装器${C_NONE}"
+    echo -e "${C_GREEN}   本环境由 GS游享网 (gsgameshare.com) 出品并提供售后${C_NONE}"
+    echo -e "${C_GREEN}   仅供学习研究使用, 请于下载后 24 小时内删除${C_NONE}"
+    echo -e "${C_GREEN}============================================================${C_NONE}"
+    echo ""
+}
+
 # ---------- 基础检查 ----------
 check_root() {
     [ "$(id -u)" = "0" ] || die "必须以 root 权限运行本脚本 (请使用: sudo bash $0)"

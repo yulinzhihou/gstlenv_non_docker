@@ -16,7 +16,7 @@ CMD_DIR="$PROJECT_DIR/cmd"
 count=0
 for f in "$CMD_DIR"/*.sh; do
     [ -f "$f" ] || continue
-    local name; name=$(basename "$f" .sh)
+    name=$(basename "$f" .sh)
     # color 为公共库, 部署为 color
     if [ "$name" = "color" ]; then
         cp -f "$f" /usr/local/bin/color && chmod +x /usr/local/bin/color
