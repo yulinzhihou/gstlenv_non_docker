@@ -111,7 +111,7 @@ rhel_install_db() {
     # 离线模式: 优先本地 rpm 包目录, el7 已有内置 MySQL.tar.gz
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "$SYS_BRANCH" != "el7" ]; then
         local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
-        if [ -d "$rdir" ] && ls "$rdir"/*mysql*.rpm >/dev/null 2>&1; then
+        if [ -d "$rdir" ] && find "$rdir" -maxdepth 1 \( -name '*mysql*.rpm' -o -name '*mariadb*.rpm' \) 2>/dev/null | grep -q .; then
             log "离线安装数据库 (rpm: $rdir)..."
             rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || \
                 { warn "数据库 rpm 安装失败, 尝试依赖补齐"; rpm -ivh "$rdir"/*.rpm >/dev/null 2>&1 || die "离线数据库安装失败"; }
@@ -198,7 +198,7 @@ rhel_setup_db() {
         el8|el9|el10)
             # MariaDB (10.4+) root 默认走 unix_socket, 需改用密码认证
             mysql -uroot <<SQL 2>/dev/null
-ALTER USER 'root'@'localhost' IDENTIFIED VIA mysql_native_password USING PASSWORD('${TLBB_DB_PASS}');
+ALTER USER 'root'@'localhost' IDENTIFIED BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'tlbb'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
