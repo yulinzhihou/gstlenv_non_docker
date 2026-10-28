@@ -43,7 +43,7 @@ select_mysql_version() {
     case "$SYS_FAMILY:$SYS_BRANCH" in
         rhel:el5|rhel:el6)  echo "51";;   # 老 RHEL → MySQL 5.1
         rhel:el7)           echo "51";;   # el7 默认 5.1 (兼容老端), 可 TLBB_MYSQL_VERSION=57 指定
-        rhel:el8)           echo "57";;   # el8 主推 5.7
+        rhel:el8)           echo "80";;   # el8: MySQL 5.7 无官方 el8 包, 只能 8.0
         rhel:el9|rhel:el10) echo "80";;   # 新系统 → MySQL 8.0
         debian:ubuntu)
             case "$SYS_VERSION_ID" in
@@ -52,7 +52,7 @@ select_mysql_version() {
                 *)                  echo "80";;   # Ubuntu 20+ → 系统自带 MySQL 8.0
             esac;;
         debian:debian)      echo "80";;   # Debian 10+ → MySQL 官方 apt 源 8.0
-        *)                  echo "57";;
+        *)                  echo "80";;
     esac
 }
 

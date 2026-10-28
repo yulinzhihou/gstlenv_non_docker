@@ -106,41 +106,56 @@ rhel_install_compat() {
     log "32 位兼容库安装完成"
 }
 
-# ---------- 配置 MySQL 官方 yum 源 (国内镜像) ----------
-# 优先级: 阿里云 → 华为云 → 腾讯云; 全部不可达时使用 MySQL 官方源
+# ---------- 配置 MySQL 官方 yum 源 ----------
+# 注意: MySQL 5.7 官方只提供 el6/el7 包(无 el8); MySQL 8.0 提供 el8/el9
+# 国内镜像(阿里云/华为云/腾讯云)只有 MySQL 发行包镜像, 无 yum 仓库结构,
+# 因此按"逐镜像探测具体 repomd.xml"决定 base, 全部不可达时用官方 repo.mysql.com
 rhel_config_mysql_repo() {
     # $1: 57|80
     local ver="$1" rel="${SYS_BRANCH#el}"
     [ -z "$rel" ] && rel="7"
+    # 防御: MySQL 5.7 无 el8 包, 自动改 8.0
+    if [ "$ver" = "57" ] && { [ "$rel" = "8" ] || [ "$rel" = "9" ] || [ "$rel" = "10" ]; }; then
+        warn "MySQL 5.7 无官方 el${rel} 包, 自动切换 MySQL 8.0"
+        ver="80"
+    fi
+    local arch; arch=$(uname -m)
+    [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
     local base=""
-    for dom in "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql" "https://mirrors.cloud.tencent.com/mysql"; do
-        if curl -sI --connect-timeout 5 --max-time 8 "$dom/" >/dev/null 2>&1 || wget -T 8 -O /dev/null -q "$dom/" 2>/dev/null; then
+    for dom in "https://repo.mysql.com" "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql" "https://mirrors.cloud.tencent.com/mysql"; do
+        if curl -sI --connect-timeout 5 --max-time 8 "${dom}/yum/mysql-${ver}-community/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
             base="$dom"; break
         fi
     done
-    [ -z "$base" ] && base="http://repo.mysql.com"
-    log "MySQL ${ver} yum 源: $base"
+    [ -z "$base" ] && { warn "MySQL ${ver} 官方 yum 源均不可达, 请检查网络或改用离线包"; return 1; }
+    log "MySQL ${ver} yum 源: $base (el${rel}/${arch})"
     cat > /etc/yum.repos.d/mysql-community.repo <<REPO
-# MySQL Community Server ${ver} (国内镜像, 由 TLBB 万能环境安装器生成)
+# MySQL Community Server ${ver} (由 TLBB 万能环境安装器生成)
 [mysql${ver}-community]
 name=MySQL ${ver} Community Server
 baseurl=${base}/yum/mysql-${ver}-community/el/${rel}/\$basearch/
 enabled=1
 gpgcheck=0
 REPO
-    # 兼容 8.0 依赖的 mysql-connectors 公共源 (部分包在 connectors/common 中)
+    # 8.0 依赖 mysql-tools / mysql-connectors 公共源 (部分 libs 包)
     if [ "$ver" = "80" ]; then
-        cat > /etc/yum.repos.d/mysql-tools.repo <<REPO
-[mysql-tools-community]
-name=MySQL Tools Community
-baseurl=${base}/yum/mysql-tools-community/el/${rel}/\$basearch/
+        for extra in mysql-tools-community mysql-connectors-community; do
+            if curl -sI --connect-timeout 5 --max-time 8 "${base}/yum/${extra}/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
+                cat >> /etc/yum.repos.d/mysql-community.repo <<REPO
+
+[${extra}]
+name=MySQL ${extra}
+baseurl=${base}/yum/${extra}/el/${rel}/\$basearch/
 enabled=1
 gpgcheck=0
 REPO
+            fi
+        done
     fi
     local m; m=$(rhel_pkgmgr)
     $m clean all >/dev/null 2>&1
-    $m makecache >/dev/null 2>&1 || warn "MySQL 源 makecache 失败, 请检查网络"
+    $m makecache >/dev/null 2>&1 || { warn "MySQL 源 makecache 失败, 尝试继续安装"; }
+    return 0
 }
 
 # ---------- 安装数据库 ----------
