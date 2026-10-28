@@ -13,7 +13,7 @@ TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"   # 数据库密码(默认 123456, 对齐
 TLBB_OFFLINE_DIR=""            # 离线组件目录(自动定位)
 TLBB_FORCE_ONLINE="0"          # 强制在线安装(跳过离线组件检测)
 TLBB_MIRROR_PRIORITY="aliyun"  # 国内源优先级: aliyun|tencent|huawei|163|sohu|baidu
-TLBB_NONINTERACTIVE="0"        # 非交互模式(用环境变量 TLBB_DB_PASS)
+TLBB_NONINTERACTIVE="${TLBB_NONINTERACTIVE:-0}"  # 非交互模式(用环境变量 TLBB_DB_PASS)
 
 # ============================================================
 # gstlenv 默认值对齐 (参考 gstlenv-master/env.sample 与 docker-compose*.yml)
