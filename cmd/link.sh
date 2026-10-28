@@ -22,7 +22,7 @@ else
     case "$1" in
         'mysql'|'sql'|'my'|'m')
             echo "${CYELLOW}进入数据库命令行 (退出请输 exit)${CEND}"
-            exec mysql -uroot -p"${TLBB_DB_PASS:-root}" 2>/dev/null || exec mysql -uroot
+            exec mysql -uroot -p"${TLBB_DB_PASS:-123456}" 2>/dev/null || exec mysql -uroot
             ;;
         'server'|'gs'|'s')
             echo "${CYELLOW}进入服务端目录: ${TLBB_HOME}${CEND}"

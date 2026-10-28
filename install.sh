@@ -22,7 +22,7 @@
 # 安装内容:
 #   1) 配置国内安装源 (阿里云/腾讯/华为/163/搜狐/清华, EOL 自动归档)
 #   2) 安装 32 位兼容库 (glibc.i686 等, TLBB 服务端为 32 位进程)
-#   3) 安装数据库 (MySQL 5.1 离线 / MariaDB 国内源)
+#   3) 安装数据库 (MySQL 5.1 / 5.7 / 8.0 多档位, 不用 MariaDB)
 #   4) 安装 unixODBC + MySQL ODBC 驱动 (32 位 + 64 位)
 #   5) 导入 tlbbdb / web 库
 #   6) 部署 tl_* 全局管理命令 (参考 gstlenv)
@@ -41,22 +41,57 @@ done
 gen_env() {
     local env_dir=/root/.tlbb
     mkdir -p "$env_dir" /home/tlbb /root/tlbb 2>/dev/null
+    local mver; mver=$(select_mysql_version)
     cat > "$env_dir/tlbb.env" <<EOF
-# TLBB 原生环境配置 (由 install.sh 生成)
+# TLBB 原生环境配置 (由 install.sh 生成, 默认值对齐 gstlenv env.sample)
 TLBB_HOME=/home/tlbb
 TLBB_ROOT=/root/tlbb
 TLBB_DB_HOST=127.0.0.1
-TLBB_DB_PORT=3306
+TLBB_DB_PORT=${TLBB_MYSQL_PORT}
 TLBB_DB_USER=root
 TLBB_DB_PASS=${TLBB_DB_PASS}
 TLBB_DB_NAME=tlbbdb
 TLBB_WEB_DB=web
 TLBB_ODBC_INI=/etc/odbc.ini
 TLBB_PROJECT_DIR=${PKG_ROOT}
-TLBB_ENV_VERSION=1.0
+TLBB_ENV_VERSION=2.0
+
+# MySQL 档位 (对齐 gstlenv: 1=CS6+5.1  2=CS7+5.1  3=CS7+5.7  4=CS9+8.0)
+TLBB_MYSQL_VERSION=${mver}
+TLBB_MYSQL_PORT=${TLBB_MYSQL_PORT}
+TLBB_MYSQL_USER=${TLBB_MYSQL_USER}
+TLBB_MYSQL_PASSWORD=${TLBB_MYSQL_PASSWORD}
+
+# 服务端口 (gstlenv 默认值)
+TLBB_BILLING_PORT=${TLBB_BILLING_PORT}
+TLBB_LOGIN_PORT=${TLBB_LOGIN_PORT}
+TLBB_SERVER_PORT=${TLBB_SERVER_PORT}
+TLBB_WEB_PORT=${TLBB_WEB_PORT}
+TLBB_WEB_GM_PORT=${TLBB_WEB_GM_PORT}
+TLBB_TZ=${TLBB_TZ}
 EOF
     chmod 600 "$env_dir/tlbb.env"
     log "运行环境文件已生成: $env_dir/tlbb.env"
+}
+
+# ---------- MySQL 档位选择交互 (对齐 gstlenv 环境编号菜单) ----------
+ask_mysql_version() {
+    [ "$TLBB_NONINTERACTIVE" = "1" ] && return 0
+    [ -n "$TLBB_MYSQL_VERSION" ] && [ "$TLBB_MYSQL_VERSION" != "auto" ] && return 0
+    echo ""
+    echo "  ※※※ 数据库版本选择 (对齐 gstlenv 环境编号) ※※※"
+    echo "  编号1: MySQL 5.1  (老端标准, CentOS 6/7 + MySQL5.1, 默认)"
+    echo "  编号2: MySQL 5.7  (改引擎端, CentOS 7/8 + MySQL5.7, 需自己替换SQL)"
+    echo "  编号3: MySQL 8.0  (64位源端, CentOS 9/10/Ubuntu20+ + MySQL8.0, 需替换SQL和ini)"
+    echo "  直接回车: 按系统自动选择 (auto)"
+    read -e -p "请输入编号 [1|2|3, 回车=auto]: " __mysql_idx
+    case "$__mysql_idx" in
+        1) TLBB_MYSQL_VERSION=51;;
+        2) TLBB_MYSQL_VERSION=57;;
+        3) TLBB_MYSQL_VERSION=80;;
+        *) TLBB_MYSQL_VERSION=auto;;
+    esac
+    log "数据库版本: MySQL ${TLBB_MYSQL_VERSION}"
 }
 
 # ---------- 部署全局管理命令 (参考 gstlenv set_command) ----------
@@ -87,17 +122,20 @@ install_cmd() {
 
 # ---------- 完成横幅 ----------
 finish_banner() {
+    local mver; mver=$(select_mysql_version)
     echo ""
     echo "=============================================================="
     echo "  TLBB 原生环境安装完成"
     echo "--------------------------------------------------------------"
-    echo "  数据库 : root / ${TLBB_DB_PASS}   库: tlbbdb, web"
+    echo "  数据库 : MySQL ${mver}  root / ${TLBB_DB_PASS}  游戏账号: ${TLBB_MYSQL_USER} / ${TLBB_MYSQL_PASSWORD}"
+    echo "  库     : tlbbdb, web"
     echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
     echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
     echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar (或 tl_untar)"
     echo "  启动   : setini && runtlbb   状态: runtop (或 tl_setini/tl_runtlbb)"
     echo "  帮助   : gs (命令帮助)  /  tl (菜单)"
-    echo "  端口   : 3306 / 7777 / 7778 / 9470 (请在安全组放行)"
+    echo "  端口   : 数据库 ${TLBB_MYSQL_PORT} | 登录 ${TLBB_LOGIN_PORT} | 游戏 ${TLBB_SERVER_PORT} | billing ${TLBB_BILLING_PORT} | web ${TLBB_WEB_PORT}/${TLBB_WEB_GM_PORT}"
+    echo "          (默认对齐 gstlenv, 请按需在安全组放行)"
     echo "=============================================================="
     echo "  GS游享网 · 天龙八部万能环境 | 售后/帮助: gs (命令菜单)"
     echo "  出品: GS游享网 (gsgameshare.com)  仅供学习研究, 24小时内删除"
@@ -123,20 +161,27 @@ detect_net() {
 check_offline_complete() {
     [ "${TLBB_OFFLINE_MODE:-0}" != "1" ] && return 0
     log "离线模式: 检查本地组件完整性..."
+    local mver; mver=$(select_mysql_version)
     local need=""
     case "$SYS_FAMILY" in
         rhel)
             case "$SYS_BRANCH" in
                 el5)  [ -f "$TLBB_OFFLINE_DIR/el5/unixODBC-2.2.11-el5.rpm" ] || need="el5 组件";;
                 el6)  [ -f "$TLBB_OFFLINE_DIR/el6/unixODBC.rpm" ] || need="el6 组件";;
-                el7)  [ -f "$TLBB_OFFLINE_DIR/el7/MySQL.tar.gz" ] || need="el7 组件";;
+                el7)
+                    [ -f "$TLBB_OFFLINE_DIR/el7/MySQL.tar.gz" ] || need="el7 MySQL 5.1 离线包"
+                    ;;
                 el8|el9|el10)
-                    [ -d "$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH" ] || need="el${SYS_BRANCH#el} 的 rpm-packages (数据库/unixODBC)"
+                    [ -d "$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH/mysql${mver}" ] && \
+                        find "$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH/mysql${mver}" -name '*.rpm' 2>/dev/null | grep -q . || \
+                        need="el${SYS_BRANCH#el} 的 MySQL ${mver} 离线 rpm (offline/rpm-packages/$SYS_BRANCH/mysql${mver}/)"
                     ;;
             esac
             ;;
         debian)
-            [ -d "$TLBB_OFFLINE_DIR/deb-packages" ] || need="deb-packages (数据库/兼容库)"
+            [ -d "$TLBB_OFFLINE_DIR/deb-packages/mysql${mver}" ] && \
+                find "$TLBB_OFFLINE_DIR/deb-packages/mysql${mver}" -name '*.deb' 2>/dev/null | grep -q . || \
+                need="deb-packages/mysql${mver}/ (MySQL ${mver} 离线 deb)"
             ;;
     esac
     if [ -n "$need" ]; then
@@ -166,6 +211,9 @@ main() {
     detect_system
     detect_cloud
     print_sysinfo
+
+    # MySQL 档位选择 (对齐 gstlenv 环境编号菜单, 可 TLBB_MYSQL_VERSION 预置)
+    ask_mysql_version
 
     if [ -z "$TLBB_OFFLINE_DIR" ]; then
         TLBB_OFFLINE_DIR="$PKG_ROOT/offline"

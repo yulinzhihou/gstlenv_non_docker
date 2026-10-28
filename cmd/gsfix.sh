@@ -58,9 +58,9 @@ fix_db() {
     if ! mysqladmin ping >/dev/null 2>&1; then
         echo "${CYELLOW}数据库未运行, 尝试启动...${CEND}"
         if [ "$SYS" = "rhel" ]; then
-            service mysqld start 2>/dev/null || service mysql start 2>/dev/null || systemctl start mariadb 2>/dev/null || true
+            service mysqld start 2>/dev/null || service mysql start 2>/dev/null || systemctl start mysqld 2>/dev/null || true
         else
-            service mariadb start 2>/dev/null || service mysql start 2>/dev/null || systemctl start mariadb 2>/dev/null || true
+            service mysql start 2>/dev/null || service mysqld start 2>/dev/null || systemctl start mysql 2>/dev/null || true
         fi
         sleep 4
         mysqladmin ping >/dev/null 2>&1 && echo "${CSUCCESS}数据库已启动${CEND}" || \

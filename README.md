@@ -97,11 +97,22 @@ bash install.sh --offline
 bash install.sh
 ```
 
-**离线模式组件来源**（按发行版版本组织）：
-- `offline/el5|el6|el7/`：内置驱动 + unixODBC + MySQL（el7）离线包
-- `offline/rpm-packages/<elX>/`：联网机器上用 `yumdownloader --resolve` 下载的数据库/兼容库 rpm（el8+ 离线必需）
-- `offline/deb-packages/`：联网机器上用 `apt-get download` 下载的 deb 包（Debian 系离线必需）
-- 生成工具：`bash scripts/pack_offline.sh`（打包内置组件）/ `--full <版本>`（联网下载依赖）
+**离线模式组件来源**（按发行版版本 + MySQL 档位组织）：
+- `offline/el5|el6|el7/`：内置驱动 + unixODBC + MySQL 5.1（el7 MySQL.tar.gz）离线包
+- `offline/rpm-packages/<elX>/mysql57|mysql80/`：联网机器上用 `dnf download --resolve` / `yumdownloader` 下载的 MySQL 官方 rpm（el8+ 离线必需）
+- `offline/rpm-packages/<elX>/compat/`：unixODBC / 32 位兼容库 rpm
+- `offline/deb-packages/mysql57|mysql80/`：联网机器上用 `apt-get download` 下载的 MySQL deb（Debian 系离线必需）
+- 生成工具：`bash scripts/pack_offline.sh`（打包内置组件）/ `--full <版本> [--mysql 51|57|80]`（联网下载依赖）
+
+**数据库档位**（对齐 gstlenv 环境编号，不用 MariaDB）：
+
+| 档位 | 适用系统 | 来源 |
+|---|---|---|
+| MySQL 5.1 | el5/el6/el7、Ubuntu 12~16 | yum vault 归档 / 内置离线包 / 系统源 5.5/5.6 |
+| MySQL 5.7 | el7/el8、Ubuntu 18 | 官方源（阿里云/华为云镜像）/ 系统源 |
+| MySQL 8.0 | el9/el10、Ubuntu 20+、Debian 10+ | 官方源 / 系统源 / Debian 官方 apt 源 |
+
+> 默认按系统自动选择，可用 `TLBB_MYSQL_VERSION=51|57|80` 或安装时菜单（1/2/3）覆盖。
 
 ### 3.1 一键安装（推荐）
 
@@ -111,11 +122,13 @@ bash install.sh
 cd /root/src
 bash install.sh
 
-# 免交互（指定数据库密码）
+# 免交互（指定数据库密码，默认 123456 对齐 gstlenv）
 TLBB_DB_PASS=你的密码 bash install.sh
+# 指定 MySQL 档位（可选，默认 auto 按系统）
+TLBB_MYSQL_VERSION=57 bash install.sh
 ```
 
-安装过程自动完成：识别系统 → 配置国内源 → 装 32 位兼容库 → 装数据库 → 导入 tlbbdb/web → 装 unixODBC + 驱动 → 部署 tl_* 命令。
+安装过程自动完成：识别系统 → 选择 MySQL 档位 → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0）→ 导入 tlbbdb/web → 装 unixODBC + 驱动 → 部署 tl_* 命令。
 
 ### 3.2 创建游戏环境（安装后）
 
@@ -193,7 +206,7 @@ tl_remove                 # 卸载
 
 | 组件 | 说明 | 离线 |
 |---|---|---|
-| MySQL / MariaDB | el5/6/7 离线 MySQL 5.1；el8+ MariaDB | el6/7 ✅ |
+| MySQL 5.1/5.7/8.0 | el5/6/7 离线 MySQL 5.1；el8 MySQL 5.7；el9/10+8.0；Ubuntu 20+/Debian 8.0（不用 MariaDB） | el6/7 ✅（5.7/8.0 走 pack_offline 生成） |
 | unixODBC | ODBC 管理器（el5/6/7 离线 rpm；el8+/deb 走源或源码） | el5/6/7 ✅ |
 | MySQL ODBC 3.51 驱动 | 32 位 libmyodbc3（服务端必须） | ✅ |
 | MySQL ODBC 5.1 驱动 | 64 位 libmyodbc5（el7+ 管理工具用） | ✅ |
@@ -212,11 +225,12 @@ tl_remove                 # 卸载
 bash scripts/pack_offline.sh
 # 输出: offline-packs/el5-offline.tar.gz, el7-offline.tar.gz, ...
 
-# 2) 在联网机器上生成某版本完整离线包（数据库+兼容库+驱动）
-bash scripts/pack_offline.sh --full el7     # RHEL: yumdownloader --resolve
-bash scripts/pack_offline.sh --full el8
-bash scripts/pack_offline.sh --full ubuntu24 # Debian: apt-get download
-# 下载产物放入 offline/rpm-packages/<版本>/ 或 offline/deb-packages/
+# 2) 在联网机器上生成某版本完整离线包（MySQL 档位 + 兼容库 + 驱动）
+bash scripts/pack_offline.sh --full el7                 # RHEL: MySQL 5.1 内置 + yumdownloader
+bash scripts/pack_offline.sh --full el8 --mysql 57      # el8 指定 MySQL 5.7 rpm
+bash scripts/pack_offline.sh --full el9 --mysql 80      # el9 指定 MySQL 8.0 rpm
+bash scripts/pack_offline.sh --full ubuntu24            # Debian: apt-get download MySQL 8.0 deb
+# 下载产物放入 offline/rpm-packages/<版本>/mysql<档位>/ 或 offline/deb-packages/mysql<档位>/
 
 # 3) 在目标服务器上解压离线包
 bash scripts/pack_offline.sh install el7

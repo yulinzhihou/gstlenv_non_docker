@@ -106,86 +106,182 @@ rhel_install_compat() {
     log "32 位兼容库安装完成"
 }
 
+# ---------- 配置 MySQL 官方 yum 源 (国内镜像) ----------
+# 优先级: 阿里云 → 华为云 → 腾讯云; 全部不可达时使用 MySQL 官方源
+rhel_config_mysql_repo() {
+    # $1: 57|80
+    local ver="$1" rel="${SYS_BRANCH#el}"
+    [ -z "$rel" ] && rel="7"
+    local base=""
+    for dom in "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql" "https://mirrors.cloud.tencent.com/mysql"; do
+        if curl -sI --connect-timeout 5 --max-time 8 "$dom/" >/dev/null 2>&1 || wget -T 8 -O /dev/null -q "$dom/" 2>/dev/null; then
+            base="$dom"; break
+        fi
+    done
+    [ -z "$base" ] && base="http://repo.mysql.com"
+    log "MySQL ${ver} yum 源: $base"
+    cat > /etc/yum.repos.d/mysql-community.repo <<REPO
+# MySQL Community Server ${ver} (国内镜像, 由 TLBB 万能环境安装器生成)
+[mysql${ver}-community]
+name=MySQL ${ver} Community Server
+baseurl=${base}/yum/mysql-${ver}-community/el/${rel}/\$basearch/
+enabled=1
+gpgcheck=0
+REPO
+    # 兼容 8.0 依赖的 mysql-connectors 公共源 (部分包在 connectors/common 中)
+    if [ "$ver" = "80" ]; then
+        cat > /etc/yum.repos.d/mysql-tools.repo <<REPO
+[mysql-tools-community]
+name=MySQL Tools Community
+baseurl=${base}/yum/mysql-tools-community/el/${rel}/\$basearch/
+enabled=1
+gpgcheck=0
+REPO
+    fi
+    local m; m=$(rhel_pkgmgr)
+    $m clean all >/dev/null 2>&1
+    $m makecache >/dev/null 2>&1 || warn "MySQL 源 makecache 失败, 请检查网络"
+}
+
 # ---------- 安装数据库 ----------
 rhel_install_db() {
-    # 离线模式: 优先本地 rpm 包目录, el7 已有内置 MySQL.tar.gz
-    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "$SYS_BRANCH" != "el7" ]; then
+    local mver; mver=$(select_mysql_version)
+    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80 覆盖)"
+    # 离线模式: 优先本地 rpm 包目录 (rpm-packages/<branch>/mysql<ver>/)
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
         local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
-        if [ -d "$rdir" ] && find "$rdir" -maxdepth 1 \( -name '*mysql*.rpm' -o -name '*mariadb*.rpm' \) 2>/dev/null | grep -q .; then
-            log "离线安装数据库 (rpm: $rdir)..."
+        local vdir="${rdir}/mysql${mver}"
+        # 兼容旧结构: 老版本打包直接把 rpm 放在 <branch>/ 下
+        [ -d "$vdir" ] && rdir="$vdir"
+        if [ -d "$rdir" ] && find "$rdir" -maxdepth 1 \( -name '*mysql*.rpm' -o -name 'MySQL*.rpm' -o -name '*mysql*.tar.gz' \) 2>/dev/null | grep -q .; then
+            log "离线安装 MySQL ${mver} (rpm: $rdir)..."
+            # 优先 tar 包 (el7 MySQL 5.1.73 bundled 格式)
+            local mtar; mtar=$(find "$rdir" -maxdepth 1 -name "MySQL*.tar.gz" 2>/dev/null | head -1)
+            if [ -n "$mtar" ]; then
+                local tmpd=/tmp/tlbb-mysql; rm -rf $tmpd; mkdir -p $tmpd
+                tar zxf "$mtar" -C $tmpd
+                yum -y remove mysql-libs 2>/dev/null || true
+                rpm -ivh $tmpd/mysql-client.rpm --nodeps --force >/dev/null 2>&1 || true
+                rpm -ivh $tmpd/mysql-server.rpm --nodeps --force >/dev/null 2>&1 || \
+                    { warn "mysql-server 离线安装失败, 尝试目录内全部 rpm"; rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || die "离线数据库安装失败"; }
+                return 0
+            fi
             rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || \
                 { warn "数据库 rpm 安装失败, 尝试依赖补齐"; rpm -ivh "$rdir"/*.rpm >/dev/null 2>&1 || die "离线数据库安装失败"; }
             return 0
         fi
-        warn "离线模式未找到数据库 rpm (offline/rpm-packages/$SYS_BRANCH/), 数据库需联网安装"
-        warn "提示: 联网机器上 'yumdownloader --resolve mariadb-server' 获取后放入该目录"
-        die "离线数据库包缺失, 安装中止 (或将 offline/rpm-packages/$SYS_BRANCH/ 补齐后重试)"
+        warn "离线模式未找到 MySQL ${mver} rpm (offline/rpm-packages/$SYS_BRANCH/mysql${mver}/), 数据库需联网安装"
+        warn "提示: 联网机器上 'bash scripts/pack_offline.sh --full <branch>' 补齐后放入该目录"
+        die "离线数据库包缺失, 安装中止 (或将 offline/rpm-packages/$SYS_BRANCH/mysql${mver}/ 补齐后重试)"
     fi
-    case "$SYS_BRANCH" in
-        el5)
-            log "安装 MySQL (yum 源, vault 归档)..."
-            rhel_pkg_install mysql-server || die "MySQL 安装失败"
-            service mysqld start 2>/dev/null || service mysql start 2>/dev/null || true
-            chkconfig mysqld on 2>/dev/null || true
+    case "$mver" in
+        51)
+            case "$SYS_BRANCH" in
+                el5)
+                    log "安装 MySQL 5.1 (yum 源, vault 归档)..."
+                    rhel_pkg_install mysql-server || die "MySQL 安装失败"
+                    ;;
+                el6)
+                    log "安装 MySQL 5.1 (yum 源)..."
+                    rhel_pkg_install mysql-server || die "MySQL 安装失败"
+                    ;;
+                el7)
+                    log "安装 MySQL 5.1.73 (离线 bundled rpm)..."
+                    rhel_pkg_install perl
+                    local mytar
+                    mytar=$(off_get el7 MySQL.tar.gz)
+                    [ -z "$mytar" ] && mytar=$(find / -name "MySQL.tar.gz" 2>/dev/null | head -1)
+                    if [ -z "$mytar" ]; then
+                        warn "未找到离线 MySQL 5.1 包, 尝试 yum 安装 mysql (vault 归档)"
+                        rhel_pkg_install mysql-server || die "MySQL 安装失败"
+                    else
+                        local tmpd=/tmp/tlbb-mysql; rm -rf $tmpd; mkdir -p $tmpd
+                        tar zxf "$mytar" -C $tmpd
+                        yum -y remove mysql-libs 2>/dev/null || true
+                        rpm -ivh $tmpd/mysql-client.rpm --nodeps --force >/dev/null 2>&1 || \
+                            warn "mysql-client 安装失败(继续)"
+                        rpm -ivh $tmpd/mysql-server.rpm --nodeps --force >/dev/null 2>&1 || \
+                            die "mysql-server 离线安装失败"
+                    fi
+                    ;;
+                *)
+                    warn "MySQL 5.1 不适配 ${SYS_BRANCH}, 改按 5.7 安装"
+                    rhel_config_mysql_repo 57
+                    rhel_pkg_install mysql-community-server || die "MySQL 5.7 安装失败"
+                    ;;
+            esac
             ;;
-        el6)
-            log "安装 MySQL (yum 源)..."
-            rhel_pkg_install mysql-server || die "MySQL 安装失败"
-            service mysqld restart 2>/dev/null || service mysql restart 2>/dev/null || true
-            chkconfig mysqld on 2>/dev/null || true
+        57)
+            log "安装 MySQL 5.7 (国内镜像源)..."
+            rhel_config_mysql_repo 57
+            rhel_pkg_install mysql-community-server || die "MySQL 5.7 安装失败"
             ;;
-        el7)
-            log "安装离线 MySQL 5.1.73 (bundled rpm)..."
-            rhel_pkg_install perl          # MySQL rpm 依赖 perl
-            local mytar
-            mytar=$(off_get el7 MySQL.tar.gz)
-            [ -z "$mytar" ] && mytar=$(find / -name "MySQL.tar.gz" 2>/dev/null | head -1)
-            if [ -z "$mytar" ]; then
-                warn "未找到离线 MySQL 包, 回退 yum 安装 mariadb"
-                rhel_pkg_install mariadb-server || die "数据库安装失败"
-            else
-                local tmpd=/tmp/tlbb-mysql; rm -rf $tmpd; mkdir -p $tmpd
-                tar zxf "$mytar" -C $tmpd
-                yum -y remove mysql-libs 2>/dev/null || true
-                rpm -ivh $tmpd/mysql-client.rpm --nodeps --force >/dev/null 2>&1 || \
-                    warn "mysql-client 安装失败(继续)"
-                rpm -ivh $tmpd/mysql-server.rpm --nodeps --force >/dev/null 2>&1 || \
-                    die "mysql-server 离线安装失败"
-            fi
+        80)
+            log "安装 MySQL 8.0 (国内镜像源)..."
+            rhel_config_mysql_repo 80
+            rhel_pkg_install mysql-community-server || die "MySQL 8.0 安装失败"
             ;;
-        el8|el9|el10)
-            log "安装 MariaDB (国内源 dnf)..."
-            local m; m=$(rhel_pkgmgr)
-            $m -y install mariadb-server >/dev/null 2>&1 || \
-            $m -y install mariadb-server >/dev/null 2>&1 || die "MariaDB 安装失败"
-            ;;
+        *) die "不支持的 MySQL 版本: $mver (可选 51|57|80)";;
     esac
 }
 
 rhel_start_db() {
-    log "启动数据库..."
+    log "启动数据库 (MySQL $(select_mysql_version))..."
+    local mver; mver=$(select_mysql_version)
     case "$SYS_BRANCH" in
         el5|el6|el7)
-            service mysqld start 2>/dev/null || service mysql start 2>/dev/null || \
-            { /etc/init.d/mysqld start 2>/dev/null || { warn "mysqld 启动失败, 尝试直接运行"; mysqld_safe --user=mysql >/dev/null 2>&1 & sleep 6; }; }
+            if [ "$mver" = "80" ] || [ "$mver" = "57" ]; then
+                systemctl enable mysqld 2>/dev/null || true
+                systemctl start mysqld 2>/dev/null || service mysqld start 2>/dev/null || \
+                    { warn "mysqld 启动失败, 尝试直接运行"; mysqld_safe --user=mysql >/dev/null 2>&1 & sleep 6; }
+            else
+                service mysqld start 2>/dev/null || service mysql start 2>/dev/null || \
+                { /etc/init.d/mysqld start 2>/dev/null || { warn "mysqld 启动失败, 尝试直接运行"; mysqld_safe --user=mysql >/dev/null 2>&1 & sleep 6; }; }
+            fi
+            chkconfig mysqld on 2>/dev/null || true
             ;;
         el8|el9|el10)
-            systemctl enable --now mariadb 2>/dev/null || systemctl start mariadb 2>/dev/null || \
-            service mariadb start 2>/dev/null || true
+            # MySQL 官方 rpm 服务名为 mysqld (非 mariadb)
+            systemctl enable mysqld 2>/dev/null || true
+            systemctl start mysqld 2>/dev/null || service mysqld start 2>/dev/null || true
             ;;
     esac
     sleep 4
-    # 等待就绪
+    # 等待就绪 (5.7/8.0 首启需先完成初始化)
     local i
-    for i in $(seq 1 15); do
+    for i in $(seq 1 20); do
         mysqladmin ping >/dev/null 2>&1 && { log "数据库已就绪"; return 0; }
         sleep 2
     done
     warn "数据库未完全就绪, 继续尝试..."
 }
 
+# ---------- MySQL 5.7/8.0 首启临时密码处理 ----------
+# MySQL 5.7+ 首次启动生成临时 root 密码 (写入 /var/log/mysqld.log)
+# 脚本自动提取并重置为 TLBB_DB_PASS, 同时卸载 validate_password 强度校验
+rhel_handle_first_boot() {
+    local mver; mver=$(select_mysql_version)
+    [ "$mver" = "51" ] && return 0
+    local tmp_pw=""
+    # 从日志提取临时密码
+    tmp_pw=$(grep -a "temporary password" /var/log/mysqld.log 2>/dev/null | tail -1 | sed 's/.*: //')
+    if [ -z "$tmp_pw" ]; then
+        # 无临时密码(已初始化过): 直接尝试无密/空密
+        mysql -uroot -e "SELECT 1;" >/dev/null 2>&1 && return 0
+        warn "未找到 MySQL 临时密码, 尝试空密码登录"
+        return 0
+    fi
+    log "检测到 MySQL 首次临时密码, 正在重置为 ${TLBB_DB_PASS} ..."
+    mysql -uroot -p"$tmp_pw" --connect-expired-password \
+        -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+    mysql -uroot -p"$tmp_pw" \
+        -e "SET PASSWORD = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" 2>/dev/null || \
+        { warn "临时密码重置失败, 请手动检查 /var/log/mysqld.log"; }
+}
+
 # ---------- 建库导入 ----------
 rhel_setup_db() {
+    local mver; mver=$(select_mysql_version)
     local sql_dir
     sql_dir=$(off_get sql tlbbdb.sql 2>/dev/null)
     sql_dir=$(dirname "$sql_dir" 2>/dev/null || echo "$TLBB_OFFLINE_DIR/sql")
@@ -193,28 +289,64 @@ rhel_setup_db() {
     [ -f "$tlbbdb" ] || tlbbdb=$(find / -name "tlbbdb.sql" 2>/dev/null | head -1)
     [ -f "$web" ] || web=$(find / -name "web.sql" 2>/dev/null | head -1)
 
-    log "创建数据库并导入 schema..."
-    case "$SYS_BRANCH" in
-        el8|el9|el10)
-            # MariaDB (10.4+) root 默认走 unix_socket, 需改用密码认证
-            mysql -uroot <<SQL 2>/dev/null
-ALTER USER 'root'@'localhost' IDENTIFIED BY '${TLBB_DB_PASS}';
-CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
+    rhel_handle_first_boot
+
+    log "配置 MySQL ${mver} 账号并建库..."
+    case "$mver" in
+        80)
+            # MySQL 8.0: 卸载密码强度组件 + 强制 native 认证 (兼容 ODBC 3.51/老驱动)
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "
+UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null;
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'tlbb'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
-GRANT ALL PRIVILEGES ON tlbbdb.* TO 'tlbb'@'%';
-GRANT ALL PRIVILEGES ON web.* TO 'tlbb'@'%';
-FLUSH PRIVILEGES;
-SQL
-            mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb; CREATE DATABASE IF NOT EXISTS web;" 2>/dev/null
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null || \
+            { warn "MySQL 8.0 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
+UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null;
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null; }
+            ;;
+        57)
+            # MySQL 5.7: ALTER USER native 认证
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "
+SET GLOBAL validate_password_policy=LOW 2>/dev/null;
+SET GLOBAL validate_password_length=6 2>/dev/null;
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null || \
+            { warn "MySQL 5.7 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
+ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null; }
             ;;
         *)
-            # 老 MySQL (5.1/5.x) 走 Password 列
+            # 老 MySQL (5.1/5.5/5.6) 走 Password 列
             mysql -uroot -e "use mysql; update user set Password=PASSWORD('${TLBB_DB_PASS}') where User='root'; FLUSH PRIVILEGES;" 2>/dev/null
             mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY '${TLBB_DB_PASS}' WITH GRANT OPTION;" 2>/dev/null
+            mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' IDENTIFIED BY '${TLBB_MYSQL_PASSWORD}' WITH GRANT OPTION;" 2>/dev/null
             mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb; CREATE DATABASE IF NOT EXISTS web;" 2>/dev/null
             ;;
     esac
+    # 确保 root 密码生效 (MySQL 8.0 空密码时创建后再次确认)
+    if [ "$mver" = "80" ] || [ "$mver" = "57" ]; then
+        mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;" 2>/dev/null
+    fi
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
         mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功"
         mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功"

@@ -9,7 +9,7 @@
 [ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
 [ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
 TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-TLBB_DB_PASS="${TLBB_DB_PASS:-root}"
+TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"
 TLBB_DB_PORT="${TLBB_DB_PORT:-3306}"
 WWW_ROOT="${TLBB_WWW_ROOT:-/tlgame/www}"
 GM_DIR="$WWW_ROOT/gm"

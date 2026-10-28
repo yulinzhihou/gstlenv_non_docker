@@ -2,7 +2,8 @@
 # ============================================================
 # TLBB 万能环境安装包 - Debian 系安装模块 (modules/debian/install.sh)
 # 覆盖: Ubuntu 12~26 | Debian 10~18
-# 已验证: Ubuntu 24.04 全链路 (阿里云源 + i386 + MariaDB + 32位ODBC)
+# 数据库: MySQL 5.5/5.6(Ubuntu12-16) | 5.7(Ubuntu18) | 8.0(Ubuntu20+/Debian官方源)
+# 32位ODBC: libmyodbc3 3.51.27 (阿里云源 + i386 兼容库)
 # ============================================================
 
 # ---------- 配置 apt 国内源 ----------
@@ -78,71 +79,171 @@ deb_install_compat() {
     log "32 位兼容库安装完成"
 }
 
+# ---------- 配置 MySQL 官方 apt 源 (Debian 10+, 国内镜像) ----------
+# Debian 的 mysql-server 元包实为 MariaDB 别名, 要装真 MySQL 必须用官方 apt 源
+deb_config_mysql_repo() {
+    local codename="$SYS_CODENAME"
+    [ -z "$codename" ] && codename=$(lsb_release -cs 2>/dev/null || echo bookworm)
+    local dom=""
+    for d in "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql" "https://mirrors.cloud.tencent.com/mysql"; do
+        curl -sI --connect-timeout 5 --max-time 8 "$d/apt/debian/" >/dev/null 2>&1 && { dom="$d"; break; }
+    done
+    [ -z "$dom" ] && dom="https://repo.mysql.com"
+    log "配置 MySQL 官方 apt 源: $dom/apt/debian/ ($codename, mysql-8.0)"
+    cat > /etc/apt/sources.list.d/mysql.list <<REPO
+deb [trusted=yes] ${dom}/apt/debian/ ${codename} mysql-8.0
+REPO
+    apt-get update >/dev/null 2>&1 || {
+        warn "MySQL apt 源更新失败, 该 Debian 代号可能暂无官方包 (移除源, 回退系统包)"
+        rm -f /etc/apt/sources.list.d/mysql.list
+        apt-get update >/dev/null 2>&1 || true
+        return 1
+    }
+    return 0
+}
+
+# ---------- 预置 MySQL debconf 密码 (避免 apt 交互卡死) ----------
+deb_preset_mysql_password() {
+    local p="$1"
+    DEBIAN_FRONTEND=noninteractive debconf-set-selections <<EOF
+mysql-server mysql-server/root_password password ${p}
+mysql-server mysql-server/root_password_again password ${p}
+mysql-community-server mysql-community-server/root-pass password ${p}
+mysql-community-server mysql-community-server/re-root-pass password ${p}
+EOF
+}
+
 # ---------- 安装数据库 ----------
 deb_install_db() {
-    # 离线模式: 尝试本地 deb 包目录 (offline/deb-packages/ 若存在), 否则提示
+    local mver; mver=$(select_mysql_version)
+    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80 覆盖)"
+    # 离线模式: 尝试本地 deb 包目录 (offline/deb-packages/mysql<ver>/ 或 deb-packages/)
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        local vdir="$TLBB_OFFLINE_DIR/deb-packages/mysql${mver}"
         local debdir="$TLBB_OFFLINE_DIR/deb-packages"
+        if [ -d "$vdir" ] && ls "$vdir"/*.deb >/dev/null 2>&1; then
+            log "离线安装 MySQL ${mver} (deb: $vdir)..."
+            dpkg -i "$vdir"/*.deb >/dev/null 2>&1 || \
+            { DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1 || true; }
+            return 0
+        fi
         if [ -d "$debdir" ] && ls "$debdir"/*.deb >/dev/null 2>&1; then
-            log "离线安装数据库 (deb 包: $debdir)..."
+            log "离线安装数据库 (deb: $debdir)..."
             dpkg -i "$debdir"/*.deb >/dev/null 2>&1 || \
             { DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1 || true; }
-        else
-            warn "离线模式未找到数据库 deb 包 (offline/deb-packages/), 数据库需联网安装"
-            warn "提示: 在联网机器上执行 'apt-get download mariadb-server' 等命令获取 deb 放入 offline/deb-packages/"
-            die "离线数据库包缺失, 安装中止 (或将 offline/deb-packages/ 补齐后重试)"
+            return 0
         fi
-        return 0
+        warn "离线模式未找到数据库 deb 包 (offline/deb-packages/mysql${mver}/), 数据库需联网安装"
+        warn "提示: 在联网机器上执行 'bash scripts/pack_offline.sh --full <ubuntu|debian>' 获取 deb 放入 offline/deb-packages/mysql${mver}/"
+        die "离线数据库包缺失, 安装中止 (或将 offline/deb-packages/mysql${mver}/ 补齐后重试)"
     fi
-    log "安装 MariaDB/MySQL..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mariadb-server mariadb-client \
-        >/dev/null 2>&1 || \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y mysql-server mysql-client \
-        >/dev/null 2>&1 || die "数据库安装失败"
+    deb_preset_mysql_password "$TLBB_DB_PASS"
+    case "$SYS_ID:$SYS_VERSION_ID" in
+        ubuntu:1[23456]*)
+            log "安装 MySQL 5.5/5.6 (Ubuntu 系统源自带真 MySQL)..."
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-server mysql-client \
+                >/dev/null 2>&1 || die "MySQL 安装失败"
+            ;;
+        ubuntu:18*)
+            log "安装 MySQL 5.7 (Ubuntu 18 系统源自带真 MySQL)..."
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-server mysql-client \
+                >/dev/null 2>&1 || die "MySQL 5.7 安装失败"
+            ;;
+        ubuntu:*)
+            log "安装 MySQL 8.0 (Ubuntu 20+ 系统源自带真 MySQL, 非 MariaDB)..."
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-server mysql-client \
+                >/dev/null 2>&1 || die "MySQL 8.0 安装失败"
+            ;;
+        debian:*)
+            log "安装 MySQL 8.0 (Debian 官方 apt 源, 避开 MariaDB 元包)..."
+            if deb_config_mysql_repo; then
+                DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-community-server mysql-community-client \
+                    >/dev/null 2>&1 || \
+                { warn "MySQL 官方包安装失败(该 Debian 代号可能暂无官方包), 尝试系统源 mysql-server"; \
+                  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-server mysql-client >/dev/null 2>&1 || die "数据库安装失败"; }
+            else
+                warn "MySQL 官方 apt 源不可用, 该 Debian 代号需使用离线包 (offline/deb-packages/mysql80/)"
+                die "数据库安装中止, 请先通过 pack_offline.sh 生成对应离线包"
+            fi
+            ;;
+        *)
+            warn "未知 Debian 系系统, 尝试系统源 mysql-server"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends mysql-server mysql-client \
+                >/dev/null 2>&1 || die "MySQL 安装失败"
+            ;;
+    esac
 }
 
 deb_start_db() {
-    log "启动数据库..."
-    service mariadb start >/dev/null 2>&1 || service mysql start >/dev/null 2>&1 || \
-    systemctl start mariadb >/dev/null 2>&1 || true
+    log "启动数据库 (MySQL $(select_mysql_version))..."
+    service mysql start >/dev/null 2>&1 || service mysqld start >/dev/null 2>&1 || \
+    systemctl start mysql >/dev/null 2>&1 || systemctl start mysqld >/dev/null 2>&1 || true
     sleep 4
     local i
-    for i in $(seq 1 15); do
+    for i in $(seq 1 20); do
         mysqladmin ping >/dev/null 2>&1 && { log "数据库已就绪"; return 0; }
         sleep 2
     done
-    warn "数据库未完全就绪"
+    warn "数据库未完全就绪, 继续尝试..."
 }
 
 # ---------- 建库导入 ----------
 deb_setup_db() {
+    local mver; mver=$(select_mysql_version)
     local sql_dir
-    local tlbbdb="" web=""
-    tlbbdb=$(find / -name "tlbbdb.sql" 2>/dev/null | head -1)
-    web=$(find / -name "web.sql" 2>/dev/null | head -1)
+    sql_dir=$(off_get sql tlbbdb.sql 2>/dev/null)
+    sql_dir=$(dirname "$sql_dir" 2>/dev/null || echo "$TLBB_OFFLINE_DIR/sql")
+    local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql"
+    [ -f "$tlbbdb" ] || tlbbdb=$(find / -name "tlbbdb.sql" 2>/dev/null | head -1)
+    [ -f "$web" ] || web=$(find / -name "web.sql" 2>/dev/null | head -1)
 
-    log "配置数据库账号并建库..."
-    # 现代 MariaDB/MySQL5.7+ (root 走 unix_socket 或 caching_sha2, 需改认证并建游戏账号)
-    mysql -uroot <<SQL 2>/dev/null
-CREATE DATABASE IF NOT EXISTS tlbbdb;
-CREATE DATABASE IF NOT EXISTS web;
-CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
+    log "配置 MySQL ${mver} 账号并建库..."
+    case "$mver" in
+        80)
+            # MySQL 8.0: root 走 auth_socket/临时密码, 需改 native 认证并卸载密码强度校验
+            # 先以 auth_socket 方式(sudo mysql)重置 root
+            mysql -uroot -e "UNINSTALL COMPONENT 'file://component_validate_password';" 2>/dev/null
+            mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';" 2>/dev/null || \
+            sudo -n mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';" 2>/dev/null
+            # Debian 官方包首启可能生成临时密码
+            local tmp_pw
+            tmp_pw=$(grep -a "temporary password" /var/log/mysql/error.log 2>/dev/null | tail -1 | sed 's/.*: //')
+            [ -z "$tmp_pw" ] && tmp_pw=$(grep -a "temporary password" /var/log/mysqld.log 2>/dev/null | tail -1 | sed 's/.*: //')
+            [ -n "$tmp_pw" ] && mysql -uroot -p"$tmp_pw" --connect-expired-password \
+                -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';" 2>/dev/null
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'tlbb'@'%' IDENTIFIED BY '${TLBB_DB_PASS}';
-GRANT ALL PRIVILEGES ON tlbbdb.* TO 'tlbb'@'%';
-GRANT ALL PRIVILEGES ON web.* TO 'tlbb'@'%';
-ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}' 2>/dev/null;
-FLUSH PRIVILEGES;
-SQL
-    # 老 MySQL (5.5/5.6, Ubuntu 12~15) 兜底: 直接改 Password 列
-    mysql -uroot -e "use mysql; update user set Password=PASSWORD('${TLBB_DB_PASS}') where User='root'; FLUSH PRIVILEGES;" 2>/dev/null
-    # 建库 (现代版已在上面建好, 老版这里补建)
-    mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb; CREATE DATABASE IF NOT EXISTS web;" 2>/dev/null
-    if [ -n "$tlbbdb" ] && [ -n "$web" ]; then
-        mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" >/dev/null 2>&1 && log "tlbbdb 导入成功"
-        mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" >/dev/null 2>&1 && log "web 导入成功"
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null || warn "MySQL 8.0 账号配置失败, 请手动检查 root 认证方式"
+            ;;
+        57)
+            # MySQL 5.7 (Ubuntu 18): root 走 auth_socket
+            mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';" 2>/dev/null || \
+            sudo -n mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';" 2>/dev/null
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "
+CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
+GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+FLUSH PRIVILEGES;" 2>/dev/null || warn "MySQL 5.7 账号配置失败"
+            ;;
+        *)
+            # 老 MySQL (5.5/5.6): root 默认空密码走 Password 列
+            mysql -uroot -e "use mysql; update user set Password=PASSWORD('${TLBB_DB_PASS}') where User='root'; FLUSH PRIVILEGES;" 2>/dev/null
+            mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' IDENTIFIED BY '${TLBB_DB_PASS}' WITH GRANT OPTION;" 2>/dev/null
+            mysql -uroot -e "GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' IDENTIFIED BY '${TLBB_MYSQL_PASSWORD}' WITH GRANT OPTION;" 2>/dev/null
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb; CREATE DATABASE IF NOT EXISTS web;" 2>/dev/null
+            ;;
+    esac
+    if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
+        mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功"
+        mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功"
     else
-        warn "未找到离线 SQL, 请手动导入 offline/sql/"
+        warn "未找到离线 SQL 文件, 跳过导入 (可使用 Navicat 手动导入 offline/sql/)"
     fi
 }
 

@@ -10,7 +10,7 @@ ok=$(echo "$ok" | tr 'a-z' 'A-Z')
 [ "$ok" != "YES" ] && { echo "已取消"; exit 1; }
 
 tl_close 2>/dev/null
-systemctl stop mysqld 2>/dev/null; systemctl stop mysql 2>/dev/null; systemctl stop mariadb 2>/dev/null
+systemctl stop mysqld 2>/dev/null; systemctl stop mysql 2>/dev/null
 service mysqld stop 2>/dev/null; service mysql stop 2>/dev/null
 
 # 移除全局命令

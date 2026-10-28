@@ -9,14 +9,15 @@
 [ -f /root/.tlbb/tlbb.env ] || { echo "${CRED}环境未安装, 请先执行 gstl / install.sh${CEND}"; exit 1; }
 ENV_FILE=/root/.tlbb/tlbb.env
 
-# 从当前 env 读取旧值
+# 从当前 env 读取旧值 (默认值对齐 gstlenv env.sample)
 . "$ENV_FILE"
-TLBB_DB_PASS="${TLBB_DB_PASS:-root}"
+TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"
 TLBB_DB_PORT="${TLBB_DB_PORT:-3306}"
-TLBB_LOGIN_PORT="${TLBB_LOGIN_PORT:-7777}"
-TLBB_GAME_PORT="${TLBB_GAME_PORT:-7778}"
-TLBB_WEB_PORT="${TLBB_WEB_PORT:-80}"
-TLBB_GM_PORT="${TLBB_GM_PORT:-81}"
+TLBB_LOGIN_PORT="${TLBB_LOGIN_PORT:-13580}"
+TLBB_GAME_PORT="${TLBB_GAME_PORT:-15680}"
+TLBB_WEB_PORT="${TLBB_WEB_PORT:-51888}"
+TLBB_GM_PORT="${TLBB_GM_PORT:-61888}"
+TLBB_BILLING_PORT="${TLBB_BILLING_PORT:-21818}"
 
 # 修改 env 变量
 set_env() {
@@ -61,15 +62,20 @@ modify_value() {
     esac
 }
 
-# 修改数据库密码 (mysql 实际执行)
+# 修改数据库密码 (兼容 MySQL 5.1/5.7/8.0)
 change_db_password() {
     [ -n "$NEW_DB_PASS" ] || return 0
     local old="${TLBB_DB_PASS}"
     echo "${CYELLOW}正在修改数据库密码 ${old} -> ${NEW_DB_PASS}...${CEND}"
+    # MySQL 5.7+/8.0: 用 ALTER USER + native 认证
+    mysql -uroot -p"$old" -e \
+        "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${NEW_DB_PASS}'; ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${NEW_DB_PASS}'; FLUSH PRIVILEGES;" >/dev/null 2>&1 && \
+        echo "${CSUCCESS}数据库密码修改成功! (ALTER USER)${CEND}" || \
+    # 老 MySQL (5.1/5.5/5.6): 用 SET PASSWORD
     mysql -uroot -p"$old" -e \
         "SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${NEW_DB_PASS}'); SET PASSWORD FOR 'root'@'%' = PASSWORD('${NEW_DB_PASS}'); FLUSH PRIVILEGES;" >/dev/null 2>&1 && \
-        echo "${CSUCCESS}数据库密码修改成功!${CEND}" || \
-        echo "${CWARNING}数据库密码修改失败(可能为 MySQL5.7+, 请手动执行 ALTER USER 或忽略)${CEND}"
+        echo "${CSUCCESS}数据库密码修改成功! (SET PASSWORD)${CEND}" || \
+        echo "${CWARNING}数据库密码修改失败, 请手动执行 ALTER USER 或核对旧密码${CEND}"
 }
 
 echo "${CMAGENTA}即将设置服务器环境配置, 请仔细!! 执行完成后需重启数据库与服务端生效${CEND}"
@@ -90,12 +96,13 @@ if [ "$is_modify" = "y" ]; then
     esac
 fi
 
-modify_value TLBB_DB_PASS     "数据库密码"   "$TLBB_DB_PASS"   "root"     "pass"
-modify_value TLBB_DB_PORT     "数据库端口"   "$TLBB_DB_PORT"   "3306"     "port"
-modify_value TLBB_LOGIN_PORT  "登录端口"     "$TLBB_LOGIN_PORT"  "7777"   "port"
-modify_value TLBB_GAME_PORT   "游戏端口"     "$TLBB_GAME_PORT"    "7778"   "port"
-modify_value TLBB_WEB_PORT    "网站端口"     "$TLBB_WEB_PORT"     "80"     "port"
-modify_value TLBB_GM_PORT     "GM网站端口"   "$TLBB_GM_PORT"      "81"     "port"
+modify_value TLBB_DB_PASS     "数据库密码"   "$TLBB_DB_PASS"     "123456"   "pass"
+modify_value TLBB_DB_PORT     "数据库端口"   "$TLBB_DB_PORT"     "3306"     "port"
+modify_value TLBB_LOGIN_PORT  "登录端口"     "$TLBB_LOGIN_PORT"  "13580"    "port"
+modify_value TLBB_GAME_PORT   "游戏端口"     "$TLBB_GAME_PORT"   "15680"    "port"
+modify_value TLBB_WEB_PORT    "网站端口"     "$TLBB_WEB_PORT"    "51888"    "port"
+modify_value TLBB_GM_PORT     "GM网站端口"   "$TLBB_GM_PORT"     "61888"    "port"
+modify_value TLBB_BILLING_PORT "billing端口" "$TLBB_BILLING_PORT" "21818"   "port"
 
 # 修改数据库实际密码
 change_db_password
