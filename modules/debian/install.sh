@@ -278,11 +278,55 @@ deb_install_odbc() {
 # ---------- 配置 ODBC ----------
 deb_config_odbc() {
     log "配置 /etc/odbc.ini ..."
-    local drvpath="/usr/lib/i386-linux-gnu/libmyodbc3.so"
+    # 驱动自动检测: 64 位 libmaodbc (MySQL8 ODBC) → 64 位 libmyodbc → 32 位 libmyodbc3
+    local drvpath=""
+    for c in /usr/lib/x86_64-linux-gnu/libmaodbc.so /usr/lib/x86_64-linux-gnu/libmyodbc.so /usr/lib/i386-linux-gnu/libmyodbc3.so; do
+        [ -f "$c" ] && { drvpath="$c"; break; }
+    done
+    [ -z "$drvpath" ] && drvpath="/usr/lib/i386-linux-gnu/libmyodbc3.so"
+    # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10
+    local game_db="tlbbdb"
+    if ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
+        game_db="tlbbdb_10"
+        log "检测到武道四 v3 端 (luoluo 目录), 启用四段 DSN 映射"
+    fi
     cat > /etc/odbc.ini <<INI
+[tlbbdb_main]
+Driver          = $drvpath
+Description     = TLBB Main DB (角色库)
+SERVER          = 127.0.0.1
+PORT            = 3306
+USER            = root
+Password        = ${TLBB_DB_PASS}
+Database        = tlbbdb
+OPTION          = 3
+SOCKET          =
+
 [tlbbdb]
 Driver          = $drvpath
-Description     = MyODBC 3.51 Driver DSN
+Description     = TLBB Game DB
+SERVER          = 127.0.0.1
+PORT            = 3306
+USER            = root
+Password        = ${TLBB_DB_PASS}
+Database        = ${game_db}
+OPTION          = 3
+SOCKET          =
+
+[tlbbdb_10]
+Driver          = $drvpath
+Description     = TLBB Game DB (动态库)
+SERVER          = 127.0.0.1
+PORT            = 3306
+USER            = root
+Password        = ${TLBB_DB_PASS}
+Database        = tlbbdb_10
+OPTION          = 3
+SOCKET          =
+
+[CHAR_DBTABASE]
+Driver          = $drvpath
+Description     = TLBB Char DB
 SERVER          = 127.0.0.1
 PORT            = 3306
 USER            = root
