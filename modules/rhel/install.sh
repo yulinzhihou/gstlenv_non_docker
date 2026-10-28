@@ -281,6 +281,13 @@ rhel_install_db() {
             ;;
         *) die "不支持的 MySQL 版本: $mver (可选 51|57|80)";;
     esac
+    # 装完数据库后禁用 MySQL 官方源: 指纹分流/失效环境会让该源持续 404,
+    # 拖累后续所有 dnf 操作 (unixODBC/其他组件安装失败)
+    if [ "$mver" != "51" ]; then
+        dnf config-manager --set-disabled "mysql*" >/dev/null 2>&1 || \
+            sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/mysql*.repo >/dev/null 2>&1
+        log "MySQL 官方源已禁用 (避免失效源拖累后续安装)"
+    fi
 }
 
 rhel_start_db() {
@@ -330,6 +337,13 @@ rhel_handle_first_boot() {
         return 0
     fi
     log "检测到 MySQL 首次临时密码, 正在重置为 ${TLBB_DB_PASS} ..."
+    # 8.0/5.7: 临时密码默认过期, 且受 validate_password 策略约束 (123456 不满足 MEDIUM)
+    # 两段式: ①先用满足策略的强密码重置(首条语句必须 ALTER USER) ②登录强密码→卸载组件→改回弱密码
+    local strong="Gstest@${TLBB_DB_PASS}"
+    mysql -uroot -p"$tmp_pw" --connect-expired-password \
+        -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$strong';" 2>/dev/null && \
+    mysql -uroot -p"$strong" \
+        -e "UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
     mysql -uroot -p"$tmp_pw" --connect-expired-password \
         -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
     mysql -uroot -p"$tmp_pw" \
