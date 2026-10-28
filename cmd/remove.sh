@@ -6,6 +6,7 @@
 [ "$(id -u)" != "0" ] && { echo "错误: 必须使用 root 用户"; exit 1; }
 echo "!!! 即将卸载 TLBB 环境 (停止服务, 移除命令) !!!"
 read -p "确认卸载? 输入 YES 继续: " ok
+ok=$(echo "$ok" | tr 'a-z' 'A-Z')
 [ "$ok" != "YES" ] && { echo "已取消"; exit 1; }
 
 tl_close 2>/dev/null

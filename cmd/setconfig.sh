@@ -34,7 +34,7 @@ modify_value() {
     local is_modify=""
     echo ""
     read -e -p "当前【${desc}】为: [${cur}], 是否需要修改 [y/n](默认: n): " is_modify
-    is_modify=${is_modify:-n}
+    is_modify=$(echo "${is_modify:-n}" | tr 'A-Z' 'a-z')
     [ "$is_modify" != "y" ] && return 0
     local new_val=""
     read -e -p "请输入【${desc}】(默认: ${default}): " new_val
@@ -80,7 +80,7 @@ echo ""
 echo "${CYELLOW}0=单L机验证(Linux服务器做验证机器, 只需一台服务器)${CEND}"
 echo "${CYELLOW}1=W机验证+L机(Windows服务器做验证机器, L机不要开验证服务)${CEND}"
 read -e -p "当前【服务器验证模式】为: [${TLBB_IS_DLQ:-0}], 是否需要修改 [y/n](默认: n): " is_modify
-is_modify=${is_modify:-n}
+is_modify=$(echo "${is_modify:-n}" | tr 'A-Z' 'a-z')
 if [ "$is_modify" = "y" ]; then
     read -e -p "请输入【验证模式 0/1】(默认: 0): " new_dlq
     new_dlq=${new_dlq:-0}

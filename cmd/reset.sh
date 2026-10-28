@@ -13,6 +13,7 @@ DBP=""
 
 echo "!!! 即将清空 tlbbdb / web 两个库并重导初始数据 !!!"
 read -p "确认删档? 输入 YES 继续: " ok
+ok=$(echo "$ok" | tr 'a-z' 'A-Z')
 [ "$ok" != "YES" ] && { echo "已取消"; exit 1; }
 
 echo "请选择初始数据源:"
