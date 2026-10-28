@@ -165,6 +165,8 @@ rhel_download_mysql_rpm() {
     # $1: 57|80   $2: rel (6|7|8|9|10)
     local ver="$1" rel="$2" arch
     arch=$(uname -m); [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
+    # 已装则直接跳过 (重跑安装器时不重复下载)
+    rpm -q mysql-community-server >/dev/null 2>&1 && { log "MySQL ${ver} 已安装, 跳过 rpm 直下"; return 0; }
     local base="https://repo.mysql.com/yum/mysql-${ver}-community/el/${rel}/${arch}"
     local tmpd="/tmp/tlbb-mysql-rpm"; rm -rf "$tmpd"; mkdir -p "$tmpd"
     log "源安装失败, 兜底: curl 直下 MySQL ${ver} rpm 本地安装 (绕过 dnf 指纹分流)"
