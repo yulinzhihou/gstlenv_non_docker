@@ -158,6 +158,42 @@ REPO
     return 0
 }
 
+# ---------- MySQL 官方 rpm 直下兜底 ----------
+# 某些网络环境(代理/防火墙按 TLS 指纹分流) dnf/yum 访问 repo.mysql.com 会 404,
+# 而 curl 直连正常. 此函数用 curl 解析 repomd/primary 拿最新包名, 下载 rpm 后本地安装.
+rhel_download_mysql_rpm() {
+    # $1: 57|80   $2: rel (6|7|8|9|10)
+    local ver="$1" rel="$2" arch
+    arch=$(uname -m); [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
+    local base="https://repo.mysql.com/yum/mysql-${ver}-community/el/${rel}/${arch}"
+    local tmpd="/tmp/tlbb-mysql-rpm"; rm -rf "$tmpd"; mkdir -p "$tmpd"
+    log "源安装失败, 兜底: curl 直下 MySQL ${ver} rpm 本地安装 (绕过 dnf 指纹分流)"
+    # 1. repomd -> primary
+    curl -s --connect-timeout 8 --max-time 30 -o "$tmpd/repomd.xml" "$base/repodata/repomd.xml" || { warn "repomd 下载失败"; return 1; }
+    local primary
+    primary=$(grep -oE 'href="repodata/[^"]*primary[^"]*"' "$tmpd/repomd.xml" | sed 's/href="//;s/"//' | head -1)
+    [ -z "$primary" ] && { warn "repomd 解析失败"; return 1; }
+    curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/primary.xml.gz" "$base/$primary" || { warn "primary 下载失败"; return 1; }
+    # 2. 提取 6 个核心包的最新版文件名 (排除 debug/devel/test)
+    local files
+    files=$(zcat "$tmpd/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
+        grep -E "mysql-community-(server|client|client-plugins|libs|common|icu-data-files)-[0-9]" | grep -vE "debug|devel|test|backup|router|shell|connector" | \
+        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3} a[k]=$0 END{for(k in a) print a[k]}')
+    [ -z "$files" ] && { warn "primary 中未解析到 rpm 文件名"; return 1; }
+    # 3. 逐个下载
+    local f ok=1
+    for f in $files; do
+        log "  下载 $f ..."
+        curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/$f" "$base/$f" || { warn "下载失败: $f"; ok=0; break; }
+    done
+    [ "$ok" = "0" ] && return 1
+    # 4. 本地安装 (禁用 mysql repo 避免触发失效源)
+    dnf --disablerepo="mysql*" localinstall -y "$tmpd"/*.rpm >/dev/null 2>&1 || \
+    rpm -ivh "$tmpd"/*.rpm --nodeps --force >/dev/null 2>&1 || { warn "rpm 本地安装失败"; return 1; }
+    log "MySQL ${ver} rpm 直下安装完成 (最新版)"
+    return 0
+}
+
 # ---------- 安装数据库 ----------
 rhel_install_db() {
     local mver; mver=$(select_mysql_version)
@@ -227,14 +263,19 @@ rhel_install_db() {
             esac
             ;;
         57)
-            log "安装 MySQL 5.7 (国内镜像源)..."
-            rhel_config_mysql_repo 57
-            rhel_pkg_install mysql-community-server || die "MySQL 5.7 安装失败"
+            log "安装 MySQL 5.7 (官方源)..."
+            local rel7; rel7="${SYS_BRANCH#el}"
+            # MySQL 5.7 无 el8+ 官方包, config 内部会自动切 8.0
+            if ! rhel_config_mysql_repo 57 || ! rhel_pkg_install mysql-community-server; then
+                rhel_download_mysql_rpm 57 "$rel7" || die "MySQL 5.7 安装失败(源与直下均失败)"
+            fi
             ;;
         80)
-            log "安装 MySQL 8.0 (国内镜像源)..."
-            rhel_config_mysql_repo 80
-            rhel_pkg_install mysql-community-server || die "MySQL 8.0 安装失败"
+            log "安装 MySQL 8.0 (官方源)..."
+            local rel8; rel8="${SYS_BRANCH#el}"
+            if ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
+                rhel_download_mysql_rpm 80 "$rel8" || die "MySQL 8.0 安装失败(源与直下均失败)"
+            fi
             ;;
         *) die "不支持的 MySQL 版本: $mver (可选 51|57|80)";;
     esac
