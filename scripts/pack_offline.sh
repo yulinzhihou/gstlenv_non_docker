@@ -37,7 +37,10 @@ pack_builtin() {
         [el8_9_10]="el8_el9_el10"
         [deb]="deb-common"
         [sql]="sql"
-        [rpm-packs]="rpm-packages"
+        [el8]="rpm-packages/el8"
+        [el9]="rpm-packages/el9"
+        [el10]="rpm-packages/el10"
+        [deb-mysql]="deb-packages"
     )
     for name in "${!MAP[@]}"; do
         local dir="$OFFLINE/${MAP[$name]}"
@@ -83,14 +86,14 @@ pack_full() {
         el8|el9)
             local m; m=$(command -v dnf >/dev/null && echo dnf || echo yum)
             command -v dnf download >/dev/null 2>&1 || command -v yumdownloader >/dev/null 2>&1 || $m -y install dnf-plugins-core >/dev/null 2>&1
-            # 按 MySQL 版本下载对应 mysql-community-server 包 (需要已配置 mysql-community 源)
+            # 用发行版 AppStream 原生 mysql 包 (el8/el9 即 MySQL 8.0, 无需 mysql-community 官方源)
+            # 若需官方 mysql-community 版本, 可先配置 mysql-community repo 后改用 mysql-community-server
             local outdir="$OFFLINE/rpm-packages/${target}/mysql${mver}"
             mkdir -p "$outdir"
-            local dbpkg="mysql-community-server mysql-community-client"
-            [ "$mver" = "80" ] && dbpkg="mysql-community-server mysql-community-client mysql-community-libs mysql-community-common"
-            $m download --resolve --destdir="$outdir" $dbpkg unixODBC unixODBC-devel glibc.i686 libstdc++.i686 libnsl.i686 libcrypt.i686 zlib.i686 2>/dev/null || \
-                warn "dnf download 部分包失败, 请确认已配置 MySQL 官方源(阿里云)后重试"
-            echo "  ${target} MySQL ${mver} 依赖已下载到 $outdir"
+            local dbpkg="mysql-server mysql mysql-libs mysql-common mysql-errmsg"
+            $m download --resolve --destdir="$outdir" $dbpkg 2>/dev/null || \
+                warn "dnf download 数据库包失败, 请确认 AppStream 源可用后重试"
+            echo "  ${target} MySQL ${mver} 已下载到 $outdir"
             ;;
         ubuntu18)
             local outdir="$OFFLINE/deb-packages/mysql57"

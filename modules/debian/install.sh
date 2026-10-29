@@ -366,6 +366,43 @@ deb_verify() {
     [ "$ok" -ge 3 ] && return 0 || return 1
 }
 
+# ---------- 安装 Redis (billing/GM 工具依赖) ----------
+deb_install_redis() {
+    if command -v redis-server >/dev/null 2>&1 || dpkg -s redis-server >/dev/null 2>&1; then
+        log "Redis 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        # 离线: 检查 deb-packages 下的 redis deb (可选)
+        if ls "$TLBB_OFFLINE_DIR"/deb-packages/redis*.deb >/dev/null 2>&1; then
+            dpkg -i "$TLBB_OFFLINE_DIR"/deb-packages/redis*.deb >/dev/null 2>&1 && \
+                log "离线 redis deb 安装完成" || warn "离线 redis deb 安装失败"
+        else
+            warn "离线包未含 redis deb, 跳过 (billing 验证可能需要 redis)"
+        fi
+    else
+        apt-get -y install redis-server >/dev/null 2>&1 || warn "redis 安装失败 (可选组件)"
+    fi
+    command -v redis-server >/dev/null 2>&1 || return 0
+    systemctl enable --now redis-server >/dev/null 2>&1 || \
+        systemctl enable --now redis >/dev/null 2>&1 || \
+        { redis-server --daemonize yes >/dev/null 2>&1 || warn "redis 启动失败"; }
+    sleep 2
+    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
+    if redis-cli -a "$rp" ping >/dev/null 2>&1; then
+        log "Redis 运行中, 密码已配置"
+    else
+        redis-cli CONFIG SET requirepass "$rp" >/dev/null 2>&1 && \
+            redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置为 ${rp}" || \
+            warn "Redis 密码设置失败, 请手动: redis-cli CONFIG SET requirepass ${rp}"
+    fi
+    local rconf=$(find /etc -name "redis.conf" 2>/dev/null | head -1)
+    if [ -n "$rconf" ]; then
+        grep -q "^requirepass" "$rconf" && \
+            sed -i "s/^requirepass.*/requirepass ${rp}/" "$rconf" || \
+            echo "requirepass ${rp}" >> "$rconf"
+    fi
+    log "Redis 配置完成: 127.0.0.1:6379, 密码 ${rp}"
+}
+
 # ---------- Debian 主流程 ----------
 deb_install() {
     ask_dbpass
@@ -375,6 +412,7 @@ deb_install() {
     deb_install_db
     deb_start_db
     deb_setup_db
+    deb_install_redis
     deb_install_odbc
     deb_config_odbc
     deb_verify

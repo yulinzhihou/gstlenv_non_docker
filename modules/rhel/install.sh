@@ -74,8 +74,17 @@ rhel_install_compat() {
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
         local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
         if [ -d "$rdir" ] && ls "$rdir"/*.rpm >/dev/null 2>&1; then
-            for r in "$rdir"/*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
-            log "离线兼容库安装完成 (来自 $rdir)"
+            local installed=0 skipped=0
+            for r in "$rdir"/*.rpm; do
+                # 跳过系统核心库降级: 仅安装本机尚未安装的包
+                local pkgname; pkgname=$(rpm -qp --qf '%{NAME}' "$r" 2>/dev/null)
+                [ -z "$pkgname" ] && continue
+                if rpm -q "$pkgname" >/dev/null 2>&1; then
+                    skipped=$((skipped + 1)); continue
+                fi
+                rpm -ivh "$r" --nodeps --force >/dev/null 2>&1 && installed=$((installed + 1))
+            done
+            log "离线兼容库处理完成: 新装 ${installed} 个, 已存在跳过 ${skipped} 个 (来自 $rdir)"
         else
             warn "离线模式未找到兼容库 rpm (offline/rpm-packages/$SYS_BRANCH/), 32 位库可能缺失"
             warn "提示: 联网机器上 'yumdownloader --resolve glibc.i686' 等获取后放入该目录"
@@ -233,8 +242,23 @@ rhel_install_db() {
                     { warn "mysql-server 离线安装失败, 尝试目录内全部 rpm"; rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || die "离线数据库安装失败"; }
                 return 0
             fi
-            rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || \
-                { warn "数据库 rpm 安装失败, 尝试依赖补齐"; rpm -ivh "$rdir"/*.rpm >/dev/null 2>&1 || die "离线数据库安装失败"; }
+            # rpm 目录安装: 跳过已安装包(避免降级系统核心库), 未安装的按依赖顺序安装
+            local installed=0 skipped=0
+            for r in "$rdir"/*.rpm; do
+                local pkgname; pkgname=$(rpm -qp --qf '%{NAME}' "$r" 2>/dev/null)
+                [ -z "$pkgname" ] && continue
+                if rpm -q "$pkgname" >/dev/null 2>&1; then
+                    skipped=$((skipped + 1)); continue
+                fi
+                rpm -ivh "$r" --nodeps --force >/dev/null 2>&1 && installed=$((installed + 1))
+            done
+            log "离线 MySQL ${mver} rpm 安装完成: 新装 ${installed} 个, 已存在跳过 ${skipped} 个"
+            # 若 mysql-server 未装上(如依赖缺失), 再尝试完整依赖安装
+            if ! rpm -q mysql-server >/dev/null 2>&1; then
+                warn "mysql-server 未装上, 尝试完整依赖安装..."
+                rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || \
+                    { warn "数据库 rpm 安装失败, 尝试依赖补齐"; rpm -ivh "$rdir"/*.rpm >/dev/null 2>&1 || die "离线数据库安装失败"; }
+            fi
             return 0
         fi
         warn "离线模式未找到 MySQL ${mver} rpm (offline/rpm-packages/$SYS_BRANCH/mysql${mver}/), 数据库需联网安装"
@@ -340,18 +364,75 @@ rhel_start_db() {
 }
 
 # ---------- MySQL 5.7/8.0 首启临时密码处理 ----------
-# MySQL 5.7+ 首次启动生成临时 root 密码 (写入 /var/log/mysqld.log)
+# MySQL 5.7+ 首次启动生成临时 root 密码 (写入日志)
+# 日志路径随发行版不同: el7/el8 = /var/log/mysqld.log, el9 = /var/log/mysql/mysqld.log
 # 脚本自动提取并重置为 TLBB_DB_PASS, 同时卸载 validate_password 强度校验
 rhel_handle_first_boot() {
     local mver; mver=$(select_mysql_version)
     [ "$mver" = "51" ] && return 0
-    local tmp_pw=""
-    # 从日志提取临时密码
-    tmp_pw=$(grep -a "temporary password" /var/log/mysqld.log 2>/dev/null | tail -1 | sed 's/.*: //')
+    local tmp_pw="" logf=""
+    # 多路径探测日志 (覆盖 el7/el8/el9 不同发行版日志位置)
+    for logf in /var/log/mysqld.log /var/log/mysql/mysqld.log /var/log/mysql/error.log; do
+        [ -f "$logf" ] || continue
+        tmp_pw=$(grep -a "temporary password" "$logf" 2>/dev/null | tail -1 | sed 's/.*: //')
+        [ -n "$tmp_pw" ] && break
+    done
+    # journald 兜底 (日志未落盘时从 systemd journal 提取)
+    if [ -z "$tmp_pw" ] && command -v journalctl >/dev/null 2>&1; then
+        tmp_pw=$(journalctl -u mysqld --no-pager 2>/dev/null | grep -a "temporary password" | tail -1 | sed 's/.*: //')
+    fi
+
     if [ -z "$tmp_pw" ]; then
-        # 无临时密码(已初始化过): 直接尝试无密/空密
-        mysql -uroot -e "SELECT 1;" >/dev/null 2>&1 && return 0
-        warn "未找到 MySQL 临时密码, 尝试空密码登录"
+        # 无临时密码(已初始化过): 先尝试无密/空密登录
+        if mysql -uroot -e "SELECT 1;" >/dev/null 2>&1; then
+            log "MySQL 本地无密可登录, 正在设置 root 密码为 ${TLBB_DB_PASS} ..."
+            mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+                warn "无密设置密码失败, 将由后续账号配置兜底"
+            return 0
+        fi
+        # 空密码登录
+        if mysql -uroot -p'' -e "SELECT 1;" >/dev/null 2>&1; then
+            log "MySQL 空密码可登录, 正在设置 root 密码为 ${TLBB_DB_PASS} ..."
+            mysql -uroot -p'' -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
+                warn "空密码设置密码失败, 将由后续账号配置兜底"
+            return 0
+        fi
+        # 终极兜底: skip-grant-tables 重置 root 密码 (覆盖日志缺失/密码未知场景)
+        log "未找到临时密码, 使用 skip-grant-tables 重置 root 密码为 ${TLBB_DB_PASS} ..."
+        systemctl stop mysqld >/dev/null 2>&1 || systemctl stop mysql >/dev/null 2>&1
+        pkill -9 mysqld 2>/dev/null; sleep 2
+        local skiptype="conf"
+        if command -v mysqld_safe >/dev/null 2>&1; then
+            # 老版本 (el6/el7/部分el8): 有 mysqld_safe
+            skiptype="safe"
+            mysqld_safe --skip-grant-tables --skip-networking >/dev/null 2>&1 &
+        else
+            # el9+ MySQL 8.0: 弃用 mysqld_safe, 用配置文件方式
+            echo -e "[mysqld]\nskip-grant-tables\nskip-networking" > /etc/my.cnf.d/zz-skip-grant.cnf
+            systemctl start mysqld >/dev/null 2>&1 || systemctl start mysql >/dev/null 2>&1
+        fi
+        local i=0
+        until mysql -uroot -e "SELECT 1;" >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
+        if mysql -uroot -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+            log "skip-grant-tables 重置成功 (方式: $skiptype)"
+        else
+            warn "skip-grant-tables 重置失败 (老版本可用 SET PASSWORD 方式)"
+            mysql -uroot -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" >/dev/null 2>&1
+        fi
+        # 恢复正常启动 (去掉 skip-grant 配置)
+        if [ "$skiptype" = "safe" ]; then
+            mysqladmin -uroot -p"${TLBB_DB_PASS}" shutdown >/dev/null 2>&1 || pkill -9 mysqld_safe 2>/dev/null
+        else
+            systemctl stop mysqld >/dev/null 2>&1 || systemctl stop mysql >/dev/null 2>&1
+            rm -f /etc/my.cnf.d/zz-skip-grant.cnf
+        fi
+        sleep 3
+        systemctl start mysqld >/dev/null 2>&1 || systemctl restart mysqld >/dev/null 2>&1 || \
+            systemctl start mysql >/dev/null 2>&1
+        # 等待就绪
+        i=0
+        until mysqladmin -uroot -p"${TLBB_DB_PASS}" ping >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
+        log "MySQL 已用 ${TLBB_DB_PASS} 重启就绪"
         return 0
     fi
     log "检测到 MySQL 首次临时密码, 正在重置为 ${TLBB_DB_PASS} ..."
@@ -366,7 +447,7 @@ rhel_handle_first_boot() {
         -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
     mysql -uroot -p"$tmp_pw" \
         -e "SET PASSWORD = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" 2>/dev/null || \
-        { warn "临时密码重置失败, 请手动检查 /var/log/mysqld.log"; }
+        { warn "临时密码重置失败, 请手动检查 MySQL 日志"; }
 }
 
 # ---------- 建库导入 ----------
@@ -385,8 +466,10 @@ rhel_setup_db() {
     case "$mver" in
         80)
             # MySQL 8.0: 卸载密码强度组件 + 强制 native 认证 (兼容 ODBC 3.51/老驱动)
+            # 注意: UNINSTALL COMPONENT 对未安装组件会报错并中止 mysql -e, 必须单独执行且忽略失败
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "UNINSTALL COMPONENT 'file://component_validate_password';" 2>/dev/null
+            mysql -uroot -e "UNINSTALL COMPONENT 'file://component_validate_password';" 2>/dev/null
             mysql -uroot -p"${TLBB_DB_PASS}" -e "
-UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null;
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
@@ -396,7 +479,6 @@ CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
 CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
 FLUSH PRIVILEGES;" 2>/dev/null || \
             { warn "MySQL 8.0 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
-UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null;
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
@@ -514,7 +596,7 @@ rhel_install_odbc() {
                 $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
                 $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败"
             fi
-            # 32 位驱动复制到 /usr/lib
+            # 32 位驱动复制到 /usr/lib (el8/el9/el10 主要用 64 位驱动, 32 位为可选兼容)
             local drv; drv=$(off_get el8_el9_el10/libmyodbc3-32bit libmyodbc3-3.51.27.so)
             [ -z "$drv" ] && drv=$(find / -name "libmyodbc3-3.51.27.so" 2>/dev/null | head -1)
             if [ -n "$drv" ]; then
@@ -523,8 +605,12 @@ rhel_install_odbc() {
                 if [ -f /usr/lib/libodbcinst.so.2 ]; then ln -sf /usr/lib/libodbcinst.so.2 /usr/lib/libodbcinst.so.1; fi
                 if [ -f /usr/lib/libodbc.so.2 ]; then ln -sf /usr/lib/libodbc.so.2 /usr/lib/libodbc.so.1; fi
                 ln -sf /usr/lib/libmyodbc3.so /usr/lib/libmyodbc3-3.51.27.so 2>/dev/null
+            elif ls /usr/lib64/libmaodbc.so >/dev/null 2>&1 || ls /usr/lib64/libmyodbc.so >/dev/null 2>&1; then
+                # el9+ 使用 64 位驱动 (libmaodbc.so = mariadb-connector-odbc, 或 libmyodbc.so)
+                log "64 位 MySQL ODBC 驱动已就位 (/usr/lib64), 32 位驱动非必需 (el9+ 端为 64 位进程)"
             else
-                warn "未找到 32 位 MySQL ODBC 驱动, ODBC 连接将失败"
+                warn "未找到 MySQL ODBC 驱动 (32 位 libmyodbc3 或 64 位 libmaodbc/libmyodbc)"
+                warn "离线模式请确保 rpm-packages/$SYS_BRANCH 内含 mariadb-connector-odbc (libmaodbc.so) 或在线安装 mysql-connector-odbc"
             fi
             ;;
     esac
@@ -615,13 +701,56 @@ rhel_verify() {
     log "验证安装结果..."
     local ok=0
     mysqladmin ping >/dev/null 2>&1 && { info "  [OK] 数据库运行中"; ok=$((ok+1)); } || warn "  [!!] 数据库未运行"
-    ls /usr/lib/libmyodbc3.so >/dev/null 2>&1 && { info "  [OK] MySQL ODBC 驱动就位 (/usr/lib/libmyodbc3.so)"; ok=$((ok+1)); }
+    if ls /usr/lib/libmyodbc3.so >/dev/null 2>&1 || ls /usr/lib64/libmaodbc.so >/dev/null 2>&1 || ls /usr/lib64/libmyodbc.so >/dev/null 2>&1; then
+        info "  [OK] MySQL ODBC 驱动就位 (32位 libmyodbc3 / 64位 libmaodbc|libmyodbc)"
+        ok=$((ok+1))
+    fi
     command -v isql >/dev/null 2>&1 && { info "  [OK] unixODBC isql 可用"; ok=$((ok+1)); }
     local t
     t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb; show tables;" 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] tlbbdb 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb 无表(需手动导入)"
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1
+}
+
+# ---------- 安装 Redis (billing/GM 工具依赖) ----------
+rhel_install_redis() {
+    if rpm -q redis >/dev/null 2>&1 || command -v redis-server >/dev/null 2>&1; then
+        log "Redis 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        log "离线模式: 检查本地 redis rpm (offline/rpm-packages/$SYS_BRANCH/)..."
+        if ls "$TLBB_OFFLINE_DIR"/rpm-packages/$SYS_BRANCH/redis*.rpm >/dev/null 2>&1; then
+            rpm -ivh "$TLBB_OFFLINE_DIR"/rpm-packages/$SYS_BRANCH/redis*.rpm --nodeps --force >/dev/null 2>&1 && \
+                log "离线 redis rpm 安装完成" || warn "离线 redis rpm 安装失败"
+        else
+            warn "离线包未含 redis rpm, 跳过 (billing 验证可能需要 redis)"
+        fi
+    else
+        rhel_pkg_install redis 2>/dev/null || warn "redis 安装失败 (可选组件, billing 验证需要)"
+    fi
+    command -v redis-server >/dev/null 2>&1 || return 0
+    # 启动 (兼容 systemd 服务名 redis/redis-server 与裸进程)
+    systemctl enable --now redis >/dev/null 2>&1 || \
+    systemctl enable --now redis-server >/dev/null 2>&1 || \
+        { redis-server --daemonize yes >/dev/null 2>&1 || warn "redis 启动失败"; }
+    sleep 2
+    # 设置密码 (对齐 .env REDIS_PASSWORD, 默认 gsgameshare.com)
+    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
+    if redis-cli -a "$rp" ping >/dev/null 2>&1; then
+        log "Redis 运行中, 密码已配置"
+    else
+        redis-cli CONFIG SET requirepass "$rp" >/dev/null 2>&1 && \
+            redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置为 ${rp}" || \
+            warn "Redis 密码设置失败, 请手动: redis-cli CONFIG SET requirepass ${rp}"
+    fi
+    # 持久化密码配置 (写入 redis 配置文件)
+    local rconf=$(redis-server --version 2>/dev/null >/dev/null; find /etc -name "redis.conf" 2>/dev/null | head -1)
+    if [ -n "$rconf" ]; then
+        grep -q "^requirepass" "$rconf" && \
+            sed -i "s/^requirepass.*/requirepass ${rp}/" "$rconf" || \
+            echo "requirepass ${rp}" >> "$rconf"
+    fi
+    log "Redis 配置完成: 127.0.0.1:6379, 密码 ${rp}"
 }
 
 # ---------- RHEL 主流程 ----------
@@ -634,6 +763,7 @@ rhel_install() {
     rhel_install_db
     rhel_start_db
     rhel_setup_db
+    rhel_install_redis
     rhel_install_odbc
     rhel_config_odbc
     rhel_verify
