@@ -34,22 +34,39 @@ log()  { echo -e "\033[32m[下载] $*\033[0m"; }
 warn() { echo -e "\033[33m[警告] $*\033[0m"; }
 die()  { echo -e "\033[31m[错误] $*\033[0m"; exit 1; }
 
-# ---------- 解析仓库 primary.xml.gz 获取 rpm 列表 ----------
+# ---------- 解析仓库 primary.xml(.gz/.zst) 获取 rpm 列表 ----------
 # $1=repo baseurl, $2=包名过滤关键字(以|分隔)
 fetch_rpm_from_repo() {
     local baseurl="$1" filter="$2" outdir="$3"
     local repomd primary
     repomd=$(curl -fsSL --connect-timeout 15 --max-time 60 "${baseurl}/repodata/repomd.xml" 2>/dev/null) || return 1
-    primary=$(echo "$repomd" | grep -oE '<location href="repodata/[^"]*primary[^"]*\.gz"' | head -1 | sed 's/.*href="//;s/"$//')
+    primary=$(echo "$repomd" | grep -oE '<location href="repodata/[^"]*primary[^"]*\.(gz|zst)"' | head -1 | sed 's/.*href="//;s/"$//')
     [ -z "$primary" ] && return 1
     curl -fsSL --connect-timeout 15 --max-time 120 "${baseurl}/${primary}" -o "$TMP/primary.xml.gz" 2>/dev/null || return 1
     local files
-    files=$(zcat "$TMP/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
-        grep -E "$filter" | grep -vE 'debug|devel|test|benchmark' | sort -u)
+    case "$primary" in
+        *.zst)
+            local dec=""
+            if command -v zstd >/dev/null 2>&1; then
+                zstd -d -f "$TMP/primary.xml.gz" -o "$TMP/primary.xml" 2>/dev/null && dec=1
+            else
+                python3 -c "import zstandard,sys; zstandard.ZstdDecompressor().copy_stream(open('$TMP/primary.xml.gz','rb'), open('$TMP/primary.xml','wb'))" 2>/dev/null && dec=1
+            fi
+            [ -z "$dec" ] && return 1
+            files=$(grep -oE '<location href="[^"]*\.rpm"' "$TMP/primary.xml" 2>/dev/null | sed 's/<location href="//;s/".*//' | \
+                grep -E "$filter" | grep -vE 'debuginfo|devel|test|benchmark|embedded|connector-java' | sort -u)
+            ;;
+        *)
+            files=$(zcat "$TMP/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
+                grep -E "$filter" | grep -vE 'debuginfo|devel|test|benchmark|embedded|connector-java' | sort -u)
+            ;;
+    esac
     [ -z "$files" ] && return 1
     local n=0
     for f in $files; do
-        curl -fsSL --connect-timeout 15 --max-time 300 "${baseurl}/${f}" -o "${outdir}/$(basename "$f")" 2>/dev/null && n=$((n + 1))
+        local fn; fn=$(basename "$f")
+        [ -f "${outdir}/${fn}" ] && continue        # 已存在跳过 (幂等)
+        curl -fsSL --connect-timeout 15 --max-time 300 "${baseurl}/${f}" -o "${outdir}/${fn}" 2>/dev/null && n=$((n + 1))
     done
     echo "$n"
 }
@@ -60,16 +77,16 @@ dl_rhel() {
     local outdir="$OFFLINE/rpm-packages/${branch}/mysql${mver}"
     mkdir -p "$outdir"
     case "$branch" in
-        el5)  # CentOS 5.11 vault
-            local base="https://mirrors.aliyun.com/centos-vault/5.11/os/x86_64/CentOS"
+        el5)  # CentOS 5.11 vault (阿里云: repomd 在 os/x86_64 层级)
+            local base="https://mirrors.aliyun.com/centos-vault/5.11/os/x86_64"
             local n
-            n=$(fetch_rpm_from_repo "$base" "mysql-(server|client)" "$outdir") && \
+            n=$(fetch_rpm_from_repo "$base" "mysql-" "$outdir") && \
                 log "el5 MySQL 5.1 rpm 下载 ${n} 个到 $outdir" || warn "el5 镜像解析失败, 可手工从 vault 下载"
             ;;
         el6)  # CentOS 6.10 vault
-            local base="https://mirrors.aliyun.com/centos-vault/6.10/os/x86_64/Packages"
+            local base="https://mirrors.aliyun.com/centos-vault/6.10/os/x86_64"
             local n
-            n=$(fetch_rpm_from_repo "$base" "mysql-(server|client)" "$outdir") && \
+            n=$(fetch_rpm_from_repo "$base" "mysql-" "$outdir") && \
                 log "el6 MySQL 5.1 rpm 下载 ${n} 个到 $outdir" || warn "el6 镜像解析失败"
             ;;
         el7)
@@ -110,25 +127,59 @@ dl_rhel() {
                 die "el7 只支持 51/57 (8.0 无官方 el7 包)"
             fi
             ;;
-        el8|el9)
+        el8|el9|el10)
             # MySQL 8.0: 发行版 AppStream (el8 已 EOL 走 vault)
             local bases=()
-            if [ "$branch" = "el8" ]; then
-                bases+=(
-                    "https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os"
-                    "https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/x86_64/os"
-                )
-            else
-                bases+=("https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os")
-            fi
+            case "$branch" in
+                el8)  bases+=("https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/x86_64/os");;
+                el9)  bases+=("https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os");;
+                el10) bases+=("https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os");;
+            esac
             local n=""
+            local mf
+            [ "$branch" = "el10" ] && mf="(mysql8\.4|mysql-selinux)-" || mf="mysql-"
             for b in "${bases[@]}"; do
-                n=$(fetch_rpm_from_repo "$b" "mysql-(server|client|libs|common|errmsg|selinux)" "$outdir") && break
+                n=$(fetch_rpm_from_repo "$b" "$mf" "$outdir") && break
                 warn "镜像不可用: $b, 尝试下一个"
             done
             [ -n "$n" ] && log "${branch} MySQL 8.0 rpm 下载 ${n} 个到 $outdir" || warn "${branch} 全部镜像失败"
             ;;
     esac
+}
+
+# ---------- minimal 完整集: compat(32位库) + odbc + redis (mysql 走 dl_rhel) ----------
+dl_rhel_full() {
+    local branch="$1"
+    local base_os="" base_app=""
+    case "$branch" in
+        el5)  base_os="https://mirrors.aliyun.com/centos-vault/5.11/os/x86_64" ;;
+        el6)  base_os="https://mirrors.aliyun.com/centos-vault/6.10/os/x86_64" ;;
+        el7)  base_os="https://mirrors.aliyun.com/centos-vault/7.9.2009/os/x86_64"; base_app="https://mirrors.aliyun.com/centos-vault/7.9.2009/AppStream/x86_64/os" ;;
+        el8)  base_os="https://mirrors.aliyun.com/centos-vault/8-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" ;;
+        el9)  base_os="https://mirrors.aliyun.com/centos-stream/9-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os" ;;
+        el10) base_os="https://mirrors.aliyun.com/centos-stream/10-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os" ;;
+        *) warn "不支持的版本: $branch"; return 1;;
+    esac
+    local compat_out="$OFFLINE/rpm-packages/${branch}/compat"
+    local odbc_out="$OFFLINE/rpm-packages/${branch}/odbc"
+    local redis_out="$OFFLINE/rpm-packages/${branch}/redis"
+    mkdir -p "$compat_out" "$odbc_out" "$redis_out"
+    # 32位兼容库 (TLBB 端依赖) - 包名带版本号: glibc-2.12-...i686.rpm
+    local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl|libcurl|libxml2)-[^"]*\.i686\.rpm'
+    local odbc_filter='(unixODBC|mysql-connector-odbc|mariadb-connector-odbc)(-|[0-9.])'
+    local redis_filter='redis-[0-9]'
+    for src in "$base_os" "$base_app"; do
+        [ -z "$src" ] && continue
+        fetch_rpm_from_repo "$src" "$compat_filter" "$compat_out" >/dev/null 2>&1 || true
+        fetch_rpm_from_repo "$src" "$odbc_filter" "$odbc_out" >/dev/null 2>&1 || true
+        if [ "$branch" != "el5" ] && [ "$branch" != "el6" ]; then
+            fetch_rpm_from_repo "$src" "$redis_filter" "$redis_out" >/dev/null 2>&1 || true
+        fi
+    done
+    local c o r
+    c=$(ls "$compat_out" 2>/dev/null | wc -l); o=$(ls "$odbc_out" 2>/dev/null | wc -l); r=$(ls "$redis_out" 2>/dev/null | wc -l)
+    log "「${branch}」minimal 完整集: compat=${c} odbc=${o} redis=${r}"
+    [ "$branch" = "el5" ] && warn "el5 官方无 redis 包, 需源码编译 (可跳过, billing 在 el5 场景可选)"
 }
 
 # ---------- 下载 Debian 系离线包 ----------
@@ -157,7 +208,7 @@ dl_debian() {
     esac
 }
 
-# Ubuntu: Ubuntu 官方主源含真实 MySQL 8.0 (mysql-server-8.0), 清华/阿里云镜像
+# Ubuntu: Ubuntu 官方主源含真实 MySQL 8.0, 下载 minimal 完整集 (server+client+libs+odbc+redis)
 dl_ubuntu_deb() {
     local codename="$1" outdir="$2"
     local bases=(
@@ -165,13 +216,19 @@ dl_ubuntu_deb() {
         "https://mirrors.aliyun.com/ubuntu"
         "https://repo.huaweicloud.com/ubuntu"
     )
+    # minimal 完整集: mysql 服务端/客户端/库 + unixODBC + redis
+    local pkgs=(mysql-server-8.0 mysql-server-core-8.0 mysql-client-8.0 mysql-client-core-8.0
+                libmysqlclient21 mysql-common libaio1 unixodbc redis-server)
     local got=""
     for b in "${bases[@]}"; do
-        if [ "$(fetch_deb "$b" "dists/${codename}/main/binary-amd64/Packages.gz" "mysql-server-8.0" "$outdir")" = "OK" ]; then got=1; break; fi
+        local n=0
+        for p in "${pkgs[@]}"; do
+            [ "$(fetch_deb "$b" "dists/${codename}/main/binary-amd64/Packages.gz" "$p" "$outdir")" = "OK" ] && n=$((n + 1))
+        done
+        if [ "$n" -gt 0 ]; then got=1; log "Ubuntu ${codename} 完整集 deb 下载 ${n} 个 (${b})"; break; fi
         warn "Ubuntu 镜像不可用: $b"
     done
-    [ -n "$got" ] && log "Ubuntu ${codename} MySQL 8.0 deb (mysql-server-8.0) 已下载到 $outdir" || \
-        warn "Ubuntu ${codename} 全部镜像失败, 建议在 Ubuntu 机器上执行 pack_offline.sh --full ubuntu${codename}"
+    [ -z "$got" ] && warn "Ubuntu ${codename} 全部镜像失败, 建议在 Ubuntu 机器上执行 pack_offline.sh --full ubuntu${codename}"
 }
 
 # Debian: Debian 11 起官方已移除 mysql-server (MariaDB 取代), 12/13 无官方 MySQL 包!
@@ -184,10 +241,19 @@ dl_debian_deb() {
 }
 
 # ---------- 主入口 ----------
-[ $# -lt 1 ] && { echo "用法: download_offline.sh <el5|el6|el7|el8|el9|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12> [51|57|80]"; exit 1; }
+[ $# -lt 1 ] && { echo "用法: download_offline.sh [--full] <el5|el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12> [51|57|80]"; exit 1; }
+FULL=""
+[ "$1" = "--full" ] && { FULL=1; shift; }
 MVER="${2:-auto}"; MVER="${MVER#mysql}"   # 兼容 mysql80/80 两种写法
 case "$1" in
-    el5|el6|el7|el8|el9) dl_rhel "$1" "$MVER";;
+    el5|el6|el7|el8|el9|el10)
+        if [ -n "$FULL" ]; then
+            dl_rhel "$1" "$MVER"      # 1) mysql 服务端
+            dl_rhel_full "$1"         # 2) compat + odbc + redis
+        else
+            dl_rhel "$1" "$MVER"
+        fi
+        ;;
     ubuntu*|debian*)     dl_debian "$1";;
     *) warn "不支持的版本: $1"; exit 1;;
 esac
