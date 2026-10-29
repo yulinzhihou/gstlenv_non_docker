@@ -338,6 +338,27 @@ bash scripts/pack_offline.sh --full ubuntu24            # Debian: apt-get downlo
 bash scripts/pack_offline.sh install el7
 ```
 
+### 方式三：镜像网站直下离线包（无对应系统 VM 时）
+
+不想准备对应发行版的联网机器时，可直接用内置下载脚本从**国内镜像网站**抓取
+MySQL 离线包到本地 `offline/`（脚本按发行版分支自动选择镜像：阿里云 > 腾讯 > 华为 > 清华）：
+
+```bash
+bash scripts/download_offline.sh el8 80      # el8 + MySQL 8.0 (阿里云 centos-vault AppStream)
+bash scripts/download_offline.sh el7 57      # el7 + MySQL 5.7 (官方直链, 已 EOL 镜像下架兜底)
+bash scripts/download_offline.sh el7 51      # el7 + MySQL 5.1 (已内置, 提示跳过)
+bash scripts/download_offline.sh el6 51      # el6 + MySQL 5.1 (阿里云 centos-vault)
+bash scripts/download_offline.sh el5 51      # el5 + MySQL 5.1 (阿里云 centos-vault)
+bash scripts/download_offline.sh ubuntu24 80 # Ubuntu 24.04 + MySQL 8.0 deb (清华/阿里云 ubuntu 主源)
+bash scripts/download_offline.sh debian12 80 # Debian 12: 官方已无 mysql-server (MariaDB 取代), 需 mysql-community
+```
+
+> 说明：
+> - **不同发行版必须使用不同安装包**（rpm/deb 格式、glibc、依赖链完全不同），无法跨发行版混用。
+> - el5/6/8 已 EOL，官方源下线 → 走 `centos-vault` 历史存档镜像；MySQL 5.7 官方仓库 2023-10 下线，
+>   脚本自动回退 `dev.mysql.com` 官方文件直链（已验证 5.7.44 全套 6 包可下）。
+> - 下载后执行 `bash scripts/pack_offline.sh` 重新打包即可分发到无网机。
+
 > 说明：仓库 clone 后需先通过 `pack_offline.sh` 重新生成 offline/（或直接从 `offline-packs/` 解压），再执行安装。
 
 ## 目录结构
