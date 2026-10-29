@@ -451,14 +451,22 @@ rhel_handle_first_boot() {
 }
 
 # ---------- 建库导入 ----------
+# 初始数据包按 MySQL 档位组织: offline/sql/mysql{51,57,80}/
+#   mysql51/  web.sql + tlbbdb.sql            (utf8, 行格式 COMPACT, MySQL 5.1 原生)
+#   mysql57/  web.sql + tlbbdb.sql            (utf8mb4, 行格式 DYNAMIC, MySQL 5.7)
+#   mysql80/  web.sql + tlbbdb.sql + tlbbdb_10.sql (utf8mb4, DYNAMIC; 对应 odbc.ini
+#             tlbbdb_main/tlbbdb/CHAR_DBTABASE DSN 的物理库 tlbbdb, tlbbdb_10 DSN 的 tlbbdb_10)
+# 每份 sql 自带 CREATE DATABASE IF NOT EXISTS + USE 头, 直接导入即可
 rhel_setup_db() {
     local mver; mver=$(select_mysql_version)
-    local sql_dir
-    sql_dir=$(off_get sql tlbbdb.sql 2>/dev/null)
-    sql_dir=$(dirname "$sql_dir" 2>/dev/null || echo "$TLBB_OFFLINE_DIR/sql")
-    local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql"
-    [ -f "$tlbbdb" ] || tlbbdb=$(find / -name "tlbbdb.sql" 2>/dev/null | head -1)
-    [ -f "$web" ] || web=$(find / -name "web.sql" 2>/dev/null | head -1)
+    local sql_dir="$TLBB_OFFLINE_DIR/sql/mysql${mver}"
+    if [ ! -d "$sql_dir" ]; then
+        sql_dir=$(dirname "$(off_get "sql/mysql${mver}" tlbbdb.sql 2>/dev/null)" 2>/dev/null || true)
+        [ -d "$sql_dir" ] || sql_dir="$TLBB_OFFLINE_DIR/sql/mysql${mver}"
+    fi
+    local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql" t10="$sql_dir/tlbbdb_10.sql"
+    [ -f "$tlbbdb" ] || tlbbdb=$(find "$TLBB_OFFLINE_DIR/sql" -name "tlbbdb.sql" 2>/dev/null | head -1)
+    [ -f "$web" ] || web=$(find "$TLBB_OFFLINE_DIR/sql" -name "web.sql" 2>/dev/null | head -1)
 
     rhel_handle_first_boot
 
@@ -475,15 +483,17 @@ CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${T
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null || \
             { warn "MySQL 8.0 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null; }
             ;;
         57)
@@ -496,15 +506,15 @@ CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${T
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null || \
             { warn "MySQL 5.7 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
+CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null; }
             ;;
         *)
@@ -517,13 +527,21 @@ FLUSH PRIVILEGES;" 2>/dev/null; }
     esac
     # 确保 root 密码生效 (MySQL 8.0 空密码时创建后再次确认)
     if [ "$mver" = "80" ] || [ "$mver" = "57" ]; then
-        mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;" 2>/dev/null
+        local cs="utf8mb4"
+        mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS web CHARACTER SET ${cs};" 2>/dev/null
+        [ "$mver" = "80" ] && mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET ${cs};" 2>/dev/null
     fi
+    # 导入初始数据 (包内自带 CREATE DATABASE/USE, 直接导入; 字符集按档位)
+    local cs_opt="utf8"; [ "$mver" = "57" ] || [ "$mver" = "80" ] && cs_opt="utf8mb4"
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
-        mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功"
-        mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功"
+        log "导入初始数据 (MySQL ${mver}: $sql_dir, 字符集 ${cs_opt})..."
+        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 offline/sql/mysql${mver}/tlbbdb.sql)"
+        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
+        if [ "$mver" = "80" ] && [ -f "$t10" ]; then
+            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
+        fi
     else
-        warn "未找到离线 SQL 文件, 跳过导入 (可使用 Navicat 手动导入 offline/sql/)"
+        warn "未找到离线 SQL 文件, 跳过导入 (可使用 Navicat 手动导入 offline/sql/mysql${mver}/)"
     fi
 }
 
@@ -709,6 +727,11 @@ rhel_verify() {
     local t
     t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb; show tables;" 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] tlbbdb 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb 无表(需手动导入)"
+    if [ "$(select_mysql_version)" = "80" ]; then
+        local t10
+        t10=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb_10; show tables;" 2>/dev/null | wc -l)
+        [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"
+    fi
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1
 }
