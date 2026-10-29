@@ -40,6 +40,7 @@ pack_builtin() {
         [el8]="rpm-packages/el8"
         [el9]="rpm-packages/el9"
         [el10]="rpm-packages/el10"
+        [fedora]="rpm-packages/fedora"
         [deb-mysql]="deb-packages"
     )
     for name in "${!MAP[@]}"; do

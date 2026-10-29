@@ -195,7 +195,8 @@ fetch_deb() {
 }
 
 dl_debian() {
-    local target="$1" outdir="$OFFLINE/deb-packages/mysql80"
+    local target="$1"
+    local outdir="$OFFLINE/deb-packages/$target"
     mkdir -p "$outdir"
     case "$target" in
         ubuntu24)  dl_ubuntu_deb "noble" "$outdir" ;;
@@ -231,17 +232,96 @@ dl_ubuntu_deb() {
     [ -z "$got" ] && warn "Ubuntu ${codename} 全部镜像失败, 建议在 Ubuntu 机器上执行 pack_offline.sh --full ubuntu${codename}"
 }
 
-# Debian: Debian 11 起官方已移除 mysql-server (MariaDB 取代), 12/13 无官方 MySQL 包!
-# 需用 mysql-community (清华/阿里云 mysql apt 仅支持 ubuntu) 或直接在 Debian 机器上
-# 配置 repo.mysql.com 后执行 pack_offline.sh --full
+# Debian 11/12: 官方源已移除 mysql-server (MariaDB 取代), 但 MySQL 官方 apt 仓库
+# (repo.mysql.com/apt) 支持 bullseye/bookworm! 下载 mysql-community-* 全套,
+# 其余依赖 (unixodbc/redis/libaio/i386 32位库) 从 Debian 官方镜像补齐
 dl_debian_deb() {
     local codename="$1" outdir="$2"
-    warn "Debian ${codename} 官方源已无 mysql-server (Debian 11 起 MariaDB 取代 MySQL), 自动跳过"
-    warn "离线 MySQL 请改用: Ubuntu 系 或 在 Debian 机器上配置 mysql-community 源后 pack_offline.sh --full"
+    mkdir -p "$outdir"
+    local n=0 got=""
+    # 1) MySQL 官方 apt 仓库 (repo.mysql.com, 支持 Debian 11/12)
+    #    注意: 其 Packages.gz 中 Filename 相对 /apt/ 根, baseurl 必须是 apt 根
+    local mbase="https://repo.mysql.com/apt"
+    local mindex="dists/${codename}/mysql-8.0/binary-amd64/Packages.gz"
+    local mpkgs=(mysql-community-server mysql-community-server-core mysql-community-client
+                 mysql-community-client-plugins mysql-community-libs mysql-community-libs-compat
+                 mysql-community-common mysql-common)
+    for p in "${mpkgs[@]}"; do
+        [ "$(fetch_deb "$mbase" "$mindex" "$p" "$outdir")" = "OK" ] && n=$((n + 1))
+    done
+    [ "$n" -gt 0 ] && { got=1; log "Debian ${codename} MySQL 8.0 官方 apt 下载 ${n} 个"; } \
+                  || warn "Debian ${codename} MySQL 官方 apt 下载失败 (repo.mysql.com 可能不可达)"
+    # 2) Debian 官方镜像: 辅助组件 + 32 位兼容库
+    local dbases=(
+        "https://mirrors.tuna.tsinghua.edu.cn/debian"
+        "https://mirrors.aliyun.com/debian"
+    )
+    local amd64=("unixodbc" "redis-server" "libaio1" "libaio1t64")
+    local i386=("libc6-i386" "libstdc++6" "libncurses6" "zlib1g" "libnsl2" "libaio1" "libaio1t64")
+    for b in "${dbases[@]}"; do
+        local n2=0 n3=0
+        for p in "${amd64[@]}"; do
+            [ "$(fetch_deb "$b" "dists/${codename}/main/binary-amd64/Packages.gz" "$p" "$outdir")" = "OK" ] && n2=$((n2 + 1))
+        done
+        for p in "${i386[@]}"; do
+            # binary-i386 索引中同名包即 i386 架构 (无需 :i386 后缀)
+            [ "$(fetch_deb "$b" "dists/${codename}/main/binary-i386/Packages.gz" "$p" "$outdir")" = "OK" ] && n3=$((n3 + 1))
+        done
+        if [ "$((n2 + n3))" -gt 0 ]; then got=1; log "Debian ${codename} 辅助组件 amd64=${n2} i386=${n3} (${b})"; break; fi
+        warn "Debian 镜像不可用: $b"
+    done
+    [ -z "$got" ] && warn "Debian ${codename} 全部镜像失败"
+}
+
+# ---------- Fedora 离线包 (Fedora 34-38) ----------
+# Fedora 无 MySQL 官方 yum 仓库 (默认 MariaDB), 方案:
+#   1) MySQL 8.0 官方通用 Linux 二进制 tarball (glibc>=2.17 任意 x86_64 可跑)
+#   2) 辅助组件从 Fedora archive 仓库下载 (用最低版本 F34 的 rpm, 依赖 >= 可覆盖 34->38)
+dl_fedora() {
+    local outdir="$OFFLINE/rpm-packages/fedora/mysql80"
+    mkdir -p "$outdir"
+    local tb="mysql-8.0.36-linux-glibc2.17-x86_64.tar.xz"
+    local url
+    for url in "https://cdn.mysql.com/Downloads/MySQL-8.0/${tb}" "https://dev.mysql.com/get/Downloads/MySQL-8.0/${tb}"; do
+        if curl -fsSL --connect-timeout 15 --max-time 900 "$url" -o "$outdir/$tb" 2>/dev/null; then
+            log "Fedora MySQL 8.0 通用二进制下载成功 ($(du -h "$outdir/$tb" | cut -f1))"
+            return 0
+        fi
+        warn "下载失败: $url, 尝试下一个"
+    done
+    warn "Fedora MySQL 通用二进制下载失败, 请手工下载到 $outdir/"
+}
+
+dl_fedora_full() {
+    local outdir="$OFFLINE/rpm-packages/fedora"
+    local compat_out="$outdir/compat" odbc_out="$outdir/odbc" redis_out="$outdir/redis"
+    mkdir -p "$compat_out" "$odbc_out" "$redis_out"
+    # Fedora 34 archive (最低版本: rpm 依赖 >= 覆盖 34~38)
+    local bases=(
+        "https://archive.fedoraproject.org/pub/archive/fedora/linux/releases/34/Everything/x86_64/os"
+        "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/34/Everything/x86_64/os"
+    )
+    local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl)-[^"]*\.i686\.rpm'
+    local odbc_filter='(unixODBC|mariadb-connector-odbc|mysql-connector-odbc)(-|[0-9.])'
+    local redis_filter='redis-[0-9]'
+    local got=""
+    for b in "${bases[@]}"; do
+        local c o r
+        c=$(fetch_rpm_from_repo "$b" "$compat_filter" "$compat_out" 2>/dev/null || echo 0)
+        o=$(fetch_rpm_from_repo "$b" "$odbc_filter" "$odbc_out" 2>/dev/null || echo 0)
+        r=$(fetch_rpm_from_repo "$b" "$redis_filter" "$redis_out" 2>/dev/null || echo 0)
+        if [ "$((c + o + r))" -gt 0 ]; then
+            got=1
+            log "Fedora(基于F34 archive, 覆盖34~38) 完整集: compat=${c} odbc=${o} redis=${r} (${b})"
+            break
+        fi
+        warn "Fedora archive 不可用: $b"
+    done
+    [ -z "$got" ] && warn "Fedora archive 全部失败"
 }
 
 # ---------- 主入口 ----------
-[ $# -lt 1 ] && { echo "用法: download_offline.sh [--full] <el5|el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12> [51|57|80]"; exit 1; }
+[ $# -lt 1 ] && { echo "用法: download_offline.sh [--full] <el5|el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12|fedora34~38> [51|57|80]"; exit 1; }
 FULL=""
 [ "$1" = "--full" ] && { FULL=1; shift; }
 MVER="${2:-auto}"; MVER="${MVER#mysql}"   # 兼容 mysql80/80 两种写法
@@ -255,6 +335,10 @@ case "$1" in
         fi
         ;;
     ubuntu*|debian*)     dl_debian "$1";;
+    fedora*)
+        dl_fedora                    # 1) mysql 通用二进制 tarball
+        dl_fedora_full               # 2) compat + odbc + redis (F34 集覆盖 34~38)
+        ;;
     *) warn "不支持的版本: $1"; exit 1;;
 esac
 log "下载完成. 重新打包: bash scripts/pack_offline.sh"

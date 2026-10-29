@@ -117,8 +117,20 @@ EOF
 deb_install_db() {
     local mver; mver=$(select_mysql_version)
     log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80 覆盖)"
-    # 离线模式: 尝试本地 deb 包目录 (offline/deb-packages/mysql<ver>/ 或 deb-packages/)
+    # 离线模式: 优先版本专属目录 (v5: debian11/12 用 MySQL 官方 apt mysql-community 全套)
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        local subdir=""
+        case "$SYS_BRANCH" in
+            ubuntu) subdir="deb-packages/ubuntu${SYS_VERSION_ID%%.*}" ;;
+            debian) subdir="deb-packages/debian${SYS_VERSION_ID%%.*}" ;;
+        esac
+        if [ -n "$subdir" ] && [ -d "$TLBB_OFFLINE_DIR/$subdir" ] && ls "$TLBB_OFFLINE_DIR/$subdir"/*.deb >/dev/null 2>&1; then
+            log "离线安装 MySQL 8.0 (deb 版本目录: $subdir)..."
+            # 同目录 dpkg -i 一次性解析内部依赖; 外部依赖 (libmecab2/libatomic1) 已随包入库
+            DEBIAN_FRONTEND=noninteractive dpkg -i "$TLBB_OFFLINE_DIR/$subdir"/*.deb >/dev/null 2>&1 || \
+            { DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1 || true; }
+            return 0
+        fi
         local vdir="$TLBB_OFFLINE_DIR/deb-packages/mysql${mver}"
         local debdir="$TLBB_OFFLINE_DIR/deb-packages"
         if [ -d "$vdir" ] && ls "$vdir"/*.deb >/dev/null 2>&1; then
@@ -133,7 +145,7 @@ deb_install_db() {
             { DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1 || true; }
             return 0
         fi
-        warn "离线模式未找到数据库 deb 包 (offline/deb-packages/mysql${mver}/), 数据库需联网安装"
+        warn "离线模式未找到数据库 deb 包 (offline/deb-packages/mysql${mver}/ 或版本子目录), 数据库需联网安装"
         warn "提示: 在联网机器上执行 'bash scripts/pack_offline.sh --full <ubuntu|debian>' 获取 deb 放入 offline/deb-packages/mysql${mver}/"
         die "离线数据库包缺失, 安装中止 (或将 offline/deb-packages/mysql${mver}/ 补齐后重试)"
     fi

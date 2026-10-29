@@ -54,8 +54,16 @@ check_offline() {
             return 1
             ;;
         debian)
-            warn "Debian ${SYS_VERSION_ID} 官方无 mysql-server (MariaDB 取代), 需 mysql-community 源, 无法离线验证"
-            return 2
+            # v5: Debian 11/12 已用 MySQL 官方 apt 仓库离线化 (mysql-community 全套)
+            local d="$OFFDIR/deb-packages/debian${SYS_VERSION_ID%%.*}"
+            [ -d "$d" ] && { echo "$d ($(ls "$d" | wc -l) deb, 含 mysql-community)"; return 0; }
+            warn "Debian ${SYS_VERSION_ID} 无离线包 (仅支持 11/12, 需先 download_offline.sh debian${SYS_VERSION_ID%%.*})"
+            return 1
+            ;;
+        fedora)
+            local d="$OFFDIR/rpm-packages/fedora"
+            [ -f "$d/mysql80/mysql-8.0"*.tar.xz ] 2>/dev/null && { echo "$d (MySQL通用二进制 + compat/odbc/redis)"; return 0; }
+            return 1
             ;;
         *) return 1;;
     esac

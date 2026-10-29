@@ -33,7 +33,7 @@ SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PKG_ROOT="$SCRIPT_DIR"
 
 # ---------- 加载模块 ----------
-for m in modules/common.sh modules/detect.sh modules/rhel/install.sh modules/debian/install.sh; do
+for m in modules/common.sh modules/detect.sh modules/rhel/install.sh modules/debian/install.sh modules/fedora/install.sh; do
     if [ -f "$PKG_ROOT/$m" ]; then source "$PKG_ROOT/$m"; else echo "[错误] 缺少模块: $m"; exit 1; fi
 done
 
@@ -249,6 +249,9 @@ check_offline_complete() {
                 find "$TLBB_OFFLINE_DIR/deb-packages/mysql${mver}" -name '*.deb' 2>/dev/null | grep -q . || \
                 need="deb-packages/mysql${mver}/ (MySQL ${mver} 离线 deb)"
             ;;
+        fedora)
+            fed_check_offline
+            ;;
     esac
     if [ -n "$need" ]; then
         warn "离线模式缺少: $need"
@@ -302,6 +305,10 @@ main() {
         debian)
             log "识别为 Debian 系 (${SYS_ID} / ${SYS_CODENAME}), 开始安装..."
             deb_install
+            ;;
+        fedora)
+            log "识别为 Fedora (${SYS_VERSION_ID} / ${SYS_PRETTY}), 开始安装..."
+            fed_install
             ;;
         *)
             err "未识别系统类型, 无法自动安装."

@@ -108,6 +108,16 @@ detect_system() {
         return 0
     fi
 
+    # 3. Fedora (无 redhat-release / debian_version, os-release ID=fedora 或存在 fedora-release)
+    if [ "$SYS_ID" = "fedora" ] || [ -f /etc/fedora-release ]; then
+        SYS_FAMILY="fedora"
+        SYS_ID="fedora"
+        [ -z "$SYS_VERSION_ID" ] && SYS_VERSION_ID=$(cat /etc/fedora-release | grep -oE '[0-9]+' | head -1)
+        SYS_BRANCH="fedora"
+        SYS_PRETTY="${SYS_PRETTY:-Fedora Linux $SYS_VERSION_ID}"
+        return 0
+    fi
+
     SYS_FAMILY="other"
     return 1
 }
