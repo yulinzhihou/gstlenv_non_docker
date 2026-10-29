@@ -66,7 +66,22 @@
 
 ### 一、环境安装步骤以及服务端上传启动（服务端）
 
-- 第 1 步：下载部署环境的项目，使用 `root` 用户登录，**否则可能会出现报错，建议安装到 `root` 根目录**。将本 `src` 包上传到服务器任意目录（如 `/root/src`），执行安装：
+- 第 1 步：使用 `root` 用户登录，**否则可能会出现报错，建议安装到 `root` 根目录**。安装环境有两种方式：
+
+**方式 A（推荐）在线一键安装** —— 一条命令自动下载源码并安装（对齐 gstlenv 的 `curl | bash` 方式）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
+```
+
+> 安装过程：自动检测 root → 下载源码到 `/root/.tlgame` → 识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0，回车=auto）→ 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0）→ 导入 tlbbdb/web → 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
+>
+> 可选参数：
+> - 指定数据库密码：`... | bash -s -- --dbpass 你的密码`
+> - 强制在线模式（配置国内源 repo 安装）：`... | bash -s -- --online`
+> - 离线模式（无网络，需先解压离线组件附件到 `/root/.tlgame/offline-packs/`）：`... | bash -s -- --offline`
+
+**方式 B（离线/手动）下载部署环境的项目**，将本 `src` 包上传到服务器任意目录（如 `/root/src`），执行安装：
 
 ```bash
 cd /root/src
