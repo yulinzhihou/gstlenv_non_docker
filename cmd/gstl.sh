@@ -1,38 +1,27 @@
-#!/bin/bash
-# ============================================================
-# gstl - 环境安装初始化 (参考 gstlenv gstl.sh, 原生版)
-# 检查环境是否已安装:
-#   已安装 -> 显示配置(curgs) + 检查虚拟内存(swap)
-#   未安装 -> 提示运行 install.sh 初始化环境
-# ============================================================
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 环境安装初始化 (原生版: 已安装则显示配置, 未安装提示运行 install.sh)
 [ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
 
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-ENV_FILE=/root/.tlbb/tlbb.env
-LOCK_FILE=/root/.tlbb/gs.lock
-
-# 环境是否已初始化 (配置文件存在 + 数据库可连)
-env_ready() {
-    [ -f "$ENV_FILE" ] && mysqladmin ping >/dev/null 2>&1
-}
-
-if env_ready || [ -f "$LOCK_FILE" ]; then
-    echo "${CYELLOW}GS游享环境已安装, 初始化配置参数如下:${CEND}"
-    echo ""
-    # 查看配置
-    if command -v curgs >/dev/null 2>&1; then curgs; else . /usr/local/bin/curgs 2>/dev/null; fi
-    # 检查/补充虚拟内存
-    if command -v swap >/dev/null 2>&1; then swap; fi
-    echo ""
-    echo "${CYELLOW}GS游享环境已初始化配置参数, 如上所示, 请保管好参数. 如需重新配置, 请执行【 setconfig 】命令! 获取命令帮助请使用【 gs 】命令${CEND}"
-    echo "${CYELLOW}温馨提醒: 建议更新最新的命令, 请使用【 upcmd 】${CEND}"
+if [ -f /root/.gs/.env ] && [ -d /tlgame ]; then
+    echo -e "${CSUCCESS}GS专用环境已经安装过了，请使用【gs】查看命令帮助！${CEND}"
+    curgs 2>/dev/null
+    # 虚拟内存检查
+    if [ ! -f /usr/swap/swapfile ]; then
+        echo -e "${CYELLOW}检测到未配置虚拟内存, 建议执行【swap】增加虚拟缓存(默认4G)${CEND}"
+    fi
     exit 0
 else
-    echo "${CRED}GS专用环境还没初始化!${CEND}"
-    echo "${CYELLOW}请先上传 src 环境包到服务器, 然后执行:${CEND}"
-    echo "  cd /root/src && bash install.sh"
-    echo "  (或直接运行: bash ${TLBB_PROJECT_DIR:-/opt/tlbb-env-pkg}/install.sh)"
-    echo "${CYELLOW}安装完成后重新执行【 gstl 】初始化配置参数${CEND}"
+    echo -e "${GSISSUE}\r\n"
+    echo -e "${CRED}GS专用环境还没初始化! 请先执行环境包安装: bash install.sh 进行安装${CEND}"
     exit 1
 fi

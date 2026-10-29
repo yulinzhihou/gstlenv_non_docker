@@ -1,61 +1,60 @@
-#!/bin/bash
-# ============================================================
-# upgm - 配置在线 GM 网站 (参考 gstlenv upgm.sh, 原生版)
-# 创建 GM 网站目录 /tlgame/www/gm 与数据库配置文件 DBConfig.php
-# 用法: upgm
-# 前置: 需将 GM 工具包 (含 GmTools.php 等文件) 上传到 /tlgame/www/gm
-# ============================================================
-[ -f /usr/local/bin/color ] && . /usr/local/bin/color
-[ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"
-TLBB_DB_PORT="${TLBB_DB_PORT:-3306}"
-WWW_ROOT="${TLBB_WWW_ROOT:-/tlgame/www}"
-GM_DIR="$WWW_ROOT/gm"
-
-# 创建 GM 网站目录
-mkdir -p "$GM_DIR"
-
-# 生成默认 DBConfig.php (对齐 gstlenv 配置项)
-cat >"$GM_DIR/DBConfig.php" <<EOF
-<?php
- 
-class DBConfig
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
 {
-    // GM工具数据库配置
-    public static \$db_host = '127.0.0.1';
-    public static \$db_name = 'tlbbdb';
-    public static \$db_user = 'root';
-    public static \$db_pass = '${TLBB_DB_PASS}';
-    public static \$db_port = '${TLBB_DB_PORT}';
-    public static \$db_prefix = '';
-    public static \$db_charset = 'utf8';
- 
-    // 账号数据库配置
-    public static \$web_host = '127.0.0.1';
-    public static \$web_name = 'web';
-    public static \$web_user = 'root';
-    public static \$web_pass = '${TLBB_DB_PASS}';
-    public static \$web_port = '${TLBB_DB_PORT}';
-    public static \$web_prefix = '';
-    public static \$web_charset = 'utf8';
- 
-    // 业务配置
-    public static \$privateKey = 'TLBB_GM_KEY';
-    public static \$loginUserName = 'admin';
-    public static \$loginPassword = 'admin123';
-}
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
+[ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 一键创建在线GM管理后台 (生成 DBConfig.php + 开启 GM 工具支持)
+if [ ! -f /root/.gs/.env ]; then
+    echo -e "${GSISSUE}\r\n"
+    echo "${CRED}环境未初始化，需要重新安装或者移除现有的环境重新安装！！！${CEND}"
+    exit 1
+fi
+
+TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+mkdir -p /tlgame/www/gm
+
+# 生成 GM 网站数据库配置文件
+cat >/tlgame/www/gm/DBConfig.php <<EOF
+<?php
+// 本文件由 gstlenv 环境自动生成, 请勿手动修改
+\$DB_HOST = '127.0.0.1';
+\$DB_PORT = ${TL_MYSQL_PORT:-3306};
+\$DB_USER = 'root';
+\$DB_PASS = '${TL_MYSQL_PASSWORD}';
+\$DB_NAME = 'web';
+// GM工具登录账号
+\$LOGIN_USER = '${LOGIN_USER_NAME}';
+\$LOGIN_PASS = '${LOGIN_PASSWORD}';
+// Redis 配置 (原生未装 Redis 时仅作预留)
+\$REDIS_HOST = '127.0.0.1';
+\$REDIS_PORT = 6379;
+\$REDIS_PASS = '${REDIS_PASSWORD}';
+// GM 通信私钥
+\$PRIVATE_KEY = '${PRIVATE_KEY}';
 EOF
 
-# 创建 gm 数据库账号表 (如需)
-mysql -uroot -p"$TLBB_DB_PASS" -e "CREATE DATABASE IF NOT EXISTS gs_gmtools;" >/dev/null 2>&1
+# 开启 GM 工具支持 (ScriptGlobal.lua)
+GLOBAL_FILE="${TLBB_PATH}/Script/ScriptGlobal.lua"
+if [ -f "${GLOBAL_FILE}" ]; then
+    sed -i "s/GMDATA_ISOPEN_GMTOOLS=.*/GMDATA_ISOPEN_GMTOOLS=1/g" "${GLOBAL_FILE}" 2>/dev/null
+    sed -i "s/GMDATA_PRIVATE_KEY=.*/GMDATA_PRIVATE_KEY=${PRIVATE_KEY}/g" "${GLOBAL_FILE}" 2>/dev/null
+fi
 
-chmod -R 777 "$GM_DIR"
-echo "${CSUCCESS}配置生成成功: ${GM_DIR}/DBConfig.php${CEND}"
-echo "${CYELLOW}请将 GM 工具包 (含 GmTools.php 等) 上传到 ${GM_DIR} 目录${CEND}"
-echo "${CYELLOW}本机部署: 将 ${GM_DIR} 挂载到 Web 服务(PHP环境) 即可访问 GM 后台${CEND}"
-echo "${CYELLOW}访问方式: http://IP地址:网站端口/gm/${CEND}"
-echo "${CYELLOW}默认 GM 登录账号: admin / admin123 (请登录后立即修改)${CEND}"
-echo "${CWARNING}注意: GM 工具需服务端 ScriptGlobal.lua 开启 GMDATA_ISOPEN_GMTOOLS 才生效${CEND}"
-exit 0
+chmod -R 777 /tlgame/www/gm
+
+if [ $? -eq 0 ]; then
+    echo -e "${CSUCCESS}在线GM网站配置已经生成, 目录: /tlgame/www/gm/DBConfig.php${CEND}"
+    echo -e "${CYELLOW}请联系GS游享网购买在线GM软件包 https://gsgameshare.com ，客服Q：1303588722${CEND}"
+    echo -e "${CYELLOW}将 GM 软件包上传到 /tlgame/www/gm 目录下, 访问方式：http://服务器IP:${WEB_GM_PORT:-61888}${CEND}"
+    exit 0
+else
+    echo -e "${GSISSUE}\r\n"
+    echo -e "${CRED}创建失败！${CEND}"
+    exit 1
+fi

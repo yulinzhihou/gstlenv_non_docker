@@ -1,37 +1,69 @@
-#!/bin/bash
-# ============================================================
-# link - 进入服务端目录命令行 (参考 gstlenv link.sh, 原生版)
-# 原生环境无容器概念, 直接进入服务端/工作目录
-# 用法:
-#   link                进入服务端目录 ${TLBB_HOME}
-#   link server|s       同上
-#   link mysql|m        直接进入 mysql 命令行
-# ============================================================
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
-[ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
 
-[ -d "$TLBB_HOME" ] || { echo "${CRED}环境未安装或服务端目录不存在: $TLBB_HOME${CEND}"; echo "${CRED}请先执行 gstl / install.sh 初始化环境${CEND}"; exit 1; }
+# comment: 进入相应的服务 (原生: 本机直连/直接进入目录)
+if [ ! -f /root/.gs/.env ]; then
+    echo -e "${GSISSUE}\r\n"
+    echo "${CRED}环境未初始化，需要重新安装或者移除现有的环境重新安装！！！${CEND}"
+    exit 1
+fi
 
 if [ $# -eq 0 ]; then
-    echo "${CYELLOW}进入服务端目录: ${TLBB_HOME}${CEND}"
-    cd "$TLBB_HOME" || exit 1
-    exec /bin/bash
+    echo "${CRED}参数不能为空,请输入 【mysql】、【server】、【nginx】、【redis】、【php】 中的任意一个${CEND}"
+    exit 1
 else
-    case "$1" in
-        'mysql'|'sql'|'my'|'m')
-            echo "${CYELLOW}进入数据库命令行 (退出请输 exit)${CEND}"
-            exec mysql -uroot -p"${TLBB_DB_PASS:-123456}" 2>/dev/null || exec mysql -uroot
-            ;;
-        'server'|'gs'|'s')
-            echo "${CYELLOW}进入服务端目录: ${TLBB_HOME}${CEND}"
-            cd "$TLBB_HOME" || exit 1
-            exec /bin/bash
-            ;;
-        *)
-            echo "${CRED}错误: 输入有误!! 请使用 link {mysql|sql|my|m},{server|gs|s}, 或不带参数进入服务端目录${CEND}"
+    case $1 in
+    'mysql')
+        if command -v mysql >/dev/null 2>&1; then
+            echo -e "${CSUCCESS}进入 MySQL 数据库 (原生直连), 输入 exit 退出${CEND}"
+            mysql -uroot -p"${TL_MYSQL_PASSWORD}"
+        else
+            echo -e "${CRED}本机未安装 mysql 客户端${CEND}"
             exit 1
-            ;;
+        fi
+        ;;
+    'server')
+        echo -e "${CSUCCESS}进入服务端目录 ${TLBB_PATH:-/tlgame/tlbb}, 输入 exit 退出${CEND}"
+        cd ${TLBB_PATH:-/tlgame/tlbb} && bash
+        ;;
+    'nginx')
+        if command -v nginx >/dev/null 2>&1; then
+            echo -e "${CSUCCESS}进入 Nginx 交互: 输入 nginx -s reload 重载, 输入 exit 退出${CEND}"
+            bash
+        else
+            echo -e "${CRED}原生环境未单独安装 nginx (网站可直接使用 Apache/其他服务)${CEND}"
+            exit 1
+        fi
+        ;;
+    'redis')
+        if command -v redis-cli >/dev/null 2>&1; then
+            echo -e "${CSUCCESS}进入 Redis 交互: 输入 auth ${REDIS_PASSWORD} 认证, 输入 exit 退出${CEND}"
+            redis-cli
+        else
+            echo -e "${CRED}原生环境未安装 redis, 可执行【setini】写入配置供 GM 工具使用${CEND}"
+            exit 1
+        fi
+        ;;
+    'php')
+        if command -v php >/dev/null 2>&1; then
+            echo -e "${CSUCCESS}进入 PHP 交互, 输入 exit 退出${CEND}"
+            php -a
+        else
+            echo -e "${CRED}原生环境未安装 php${CEND}"
+            exit 1
+        fi
+        ;;
+    *)
+        echo "${CRED}参数不正确, 请输入 【mysql】、【server】、【nginx】、【redis】、【php】 中的任意一个${CEND}"
+        exit 1
+        ;;
     esac
 fi

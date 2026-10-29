@@ -1,37 +1,37 @@
-#!/bin/bash
-# ============================================================
-# upcmd - 重新部署全局命令 (参考 gstlenv upcmd.sh, 原生版)
-# 从环境包 cmd/ 目录重新部署全部 gs 命令到 /usr/local/bin
-# 用法: upcmd
-# ============================================================
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 更新全局命令 (从环境包 cmd/ 重新部署, 对齐 gstlenv upcmd)
 [ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-PROJECT_DIR="${TLBB_PROJECT_DIR:-/opt/tlbb-env-pkg}"
 
-CMD_DIR="$PROJECT_DIR/cmd"
-[ -d "$CMD_DIR" ] || { echo "${CRED}未找到命令目录: $CMD_DIR (请检查环境包路径)${CEND}"; exit 1; }
+CMD_DIR="${GS_PROJECT:-/root/.tlgame}/cmd"
+[ -d "$CMD_DIR" ] || CMD_DIR="$(dirname "$0")/../cmd"
+[ -d "$CMD_DIR" ] || { echo -e "${GSISSUE}\r\n"; echo -e "${CRED}未找到 cmd/ 命令目录, 请确认环境包路径!${CEND}"; exit 1; }
 
-# 部署全部命令: gs 原名 + tl_ 兼容名
 count=0
 for f in "$CMD_DIR"/*.sh; do
     [ -f "$f" ] || continue
     name=$(basename "$f" .sh)
-    # color 为公共库, 部署为 color
-    if [ "$name" = "color" ]; then
-        cp -f "$f" /usr/local/bin/color && chmod +x /usr/local/bin/color
-        count=$((count + 1))
-        continue
-    fi
-    # gs 命令原名 (对齐 gstlenv)
-    cp -f "$f" "/usr/local/bin/${name}" && chmod +x "/usr/local/bin/${name}"
-    # tl_ 前缀兼容名 (tl 菜单除外)
-    if [ "$name" != "tl" ]; then
-        cp -f "$f" "/usr/local/bin/tl_${name}" && chmod +x "/usr/local/bin/tl_${name}"
-    fi
-    count=$((count + 1))
+    cp -f "$f" "/usr/local/bin/${name}" && chmod +x "/usr/local/bin/${name}" && count=$((count + 1))
 done
+# 统一入口 gsctl
+if [ -f "$CMD_DIR/gsctl.sh" ]; then
+    cp -f "$CMD_DIR/gsctl.sh" /usr/local/bin/gsctl && chmod +x /usr/local/bin/gsctl
+fi
 
-echo "${CSUCCESS}命令重新生成成功, 共部署 ${count} 个命令到 /usr/local/bin${CEND}"
-echo "${CYELLOW}如果需要了解详情, 可以运行【 gs 】命令进行帮助查询!!${CEND}"
-exit 0
+if [ $? -eq 0 ]; then
+    echo -e "${CSUCCESS}命令更新成功, 共 ${count} 个命令. 输入 【gs】 查看命令帮助!${CEND}"
+    exit 0
+else
+    echo -e "${GSISSUE}\r\n"
+    echo -e "${CRED}命令更新失败!${CEND}"
+    exit 1
+fi

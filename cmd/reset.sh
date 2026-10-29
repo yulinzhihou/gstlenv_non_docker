@@ -1,48 +1,57 @@
-#!/bin/bash
-# ============================================================
-# tl_reset - 删档并重导 tlbbdb/web 库 (参考 gstlenv reset)
-# 注意: 会清空所有玩家数据! 执行前建议 tl_backup
-# ============================================================
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-DB_USER="${TLBB_DB_USER:-root}"
-DB_PASS="${TLBB_DB_PASS:-}"
-DB_HOST="${TLBB_DB_HOST:-127.0.0.1}"
-DB_PORT="${TLBB_DB_PORT:-3306}"
-DBP=""
-[ -n "$DB_PASS" ] && DBP="-p${DB_PASS}"
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
+[ -f /usr/local/bin/color ] && . /usr/local/bin/color
 
-echo "!!! 即将清空 tlbbdb / web 两个库并重导初始数据 !!!"
-read -p "确认删档? 输入 YES 继续: " ok
-ok=$(echo "$ok" | tr 'a-z' 'A-Z')
-[ "$ok" != "YES" ] && { echo "已取消"; exit 1; }
-
-echo "请选择初始数据源:"
-echo "  1) 安装包内置 (offline/sql/)"
-echo "  2) /root/backup 最新备份"
-read -p "选择 [1/2]: " src
-src="${src:-1}"
-
-SQL_DIR=""
-if [ "$src" = "2" ]; then
-    SQL_DIR=/root/backup
-else
-    # 定位安装包 offline/sql
-    for d in /root/tlbb-env /root/src /opt/tlbb /root; do :; done
-    SQL_DIR=$(find /root -type d -name sql -path "*offline*" 2>/dev/null | head -1)
-    [ -z "$SQL_DIR" ] && SQL_DIR=$(dirname "$(find /root -name tlbbdb.sql 2>/dev/null | head -1)" 2>/dev/null)
-    [ -z "$SQL_DIR" ] && { echo "[错误] 未找到 offline/sql 目录"; exit 1; }
+# comment: 删档脚本 (原生: drop 库并重新导入初始 SQL)
+if [ ! -f /root/.gs/.env ]; then
+    echo -e "${GSISSUE}\r\n"
+    echo "${CRED}环境未初始化，需要重新安装或者移除现有的环境重新安装！！！${CEND}"
+    exit 1
 fi
 
-mysql -h"$DB_HOST" -P"$DB_PORT" -u"$DB_USER" $DBP -e "DROP DATABASE IF EXISTS tlbbdb; DROP DATABASE IF EXISTS web; CREATE DATABASE tlbbdb DEFAULT CHARACTER SET utf8; CREATE DATABASE web DEFAULT CHARACTER SET utf8;" 2>/dev/null
+TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:-123456}"
 
-# 还原: 备份模式用文件名, 内置模式用 tlbbdb.sql/web.sql
-if [ "$src" = "2" ]; then
-    TB=$(ls -t /root/backup/tlbbdb_*.sql 2>/dev/null | head -1)
-    WB=$(ls -t /root/backup/web_*.sql 2>/dev/null | head -1)
-    [ -n "$TB" ] && mysql -h"$DB_HOST" -u"$DB_USER" $DBP tlbbdb < "$TB" 2>/dev/null && echo "[OK] tlbbdb 还原"
-    [ -n "$WB" ] && mysql -h"$DB_HOST" -u"$DB_USER" $DBP web < "$WB" 2>/dev/null && echo "[OK] web 还原"
-else
-    mysql -h"$DB_HOST" -u"$DB_USER" $DBP tlbbdb < "$SQL_DIR/tlbbdb.sql" 2>/dev/null && echo "[OK] tlbbdb 导入"
-    mysql -h"$DB_HOST" -u"$DB_USER" $DBP web < "$SQL_DIR/web.sql" 2>/dev/null && echo "[OK] web 导入"
-fi
-echo "[完成] 删档重导完成, 请重启服务端生效: tl_restart"
+while :; do
+    echo
+    for ((time = 5; time >= 0; time--)); do
+        echo -ne "\r在准备正行删档操作！！，剩余 ${CYELLOW}$time${CEND} 秒，可以在计时结束前，按 CTRL+C 退出！如果需要备份，退出后再执行【backup】命令\r"
+        sleep 1
+    done
+    echo -ne "\n\r"
+    echo -ne "${CYELLOW}正在删档，数据全部清空…………\r${CEND}"
+
+    # 原生: 从环境包 offline/sql 重新导入初始库
+    SQL_DIR=""
+    for d in "${GS_PROJECT}/offline/sql" "${TLBB_PROJECT_DIR}/offline/sql" "/root/.tlgame/offline/sql"; do
+        [ -f "$d/tlbbdb.sql" ] && [ -f "$d/web.sql" ] && { SQL_DIR="$d"; break; }
+    done
+    if [ -z "$SQL_DIR" ]; then
+        SQL_DIR=$(find /root /opt /tlgame -type d -name sql -path "*offline*" 2>/dev/null | head -1)
+    fi
+    if [ -z "$SQL_DIR" ] || [ ! -f "$SQL_DIR/tlbbdb.sql" ] || [ ! -f "$SQL_DIR/web.sql" ]; then
+        echo -e "${GSISSUE}\r\n"
+        echo -e "${CRED}未找到初始数据库文件 (offline/sql/tlbbdb.sql, web.sql)，无法删档重置！${CEND}"
+        exit 1
+    fi
+
+    mysql -uroot -p"${TL_MYSQL_PASSWORD}" -e "DROP DATABASE IF EXISTS tlbbdb; DROP DATABASE IF EXISTS web; CREATE DATABASE tlbbdb DEFAULT CHARACTER SET utf8; CREATE DATABASE web DEFAULT CHARACTER SET utf8;" 2>/dev/null
+    mysql -uroot -p"${TL_MYSQL_PASSWORD}" web <"$SQL_DIR/web.sql" 2>/dev/null && echo "  web 库已重置"
+    mysql -uroot -p"${TL_MYSQL_PASSWORD}" tlbbdb <"$SQL_DIR/tlbbdb.sql" 2>/dev/null && echo "  tlbbdb 库已重置"
+
+    if [ $? -eq 0 ]; then
+        echo -e "${CSUCCESS}已经删档成功${CEND}"
+        echo -e "${CYELLOW}删档后请重启服务端生效: 【restart】 或 【runtlbb】${CEND}"
+        exit 0
+    else
+        echo -e "${GSISSUE}\r\n"
+        echo -e "${CRED}已经删档失败！可能需要重装系统或者环境了！${CEND}"
+        exit 1
+    fi
+done

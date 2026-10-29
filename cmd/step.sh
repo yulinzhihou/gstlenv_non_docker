@@ -1,20 +1,26 @@
-#!/bin/bash
-# ============================================================
-# step - 分步调试开服 (参考 gstlenv step.sh, 原生版)
-# 解析 /home/tlbb/run.sh, 逐步启动服务端进程
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
+[ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 分步调试开服 (参考 gstlenv step.sh, 原生版)
+# 解析 /tlgame/tlbb/run.sh, 逐步启动服务端进程
 # 用法:
 #   step          交互式选择启动步骤
 #   step 1        启动第 1 步 (billing 存在时先启动 billing)
 #   step 2...N    启动对应进程 (Login/Center/World/Server 等)
 # ============================================================
-[ -f /usr/local/bin/color ] && . /usr/local/bin/color
-[ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-RUN_SH_FILE="$TLBB_HOME/run.sh"
-TLBB_SERVER_DIR="$TLBB_HOME/Server"
+TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+RUN_SH_FILE="$TLBB_PATH/run.sh"
+TLBB_SERVER_DIR="$TLBB_PATH/Server"
 
-[ -d "$TLBB_HOME" ] || { echo "${CRED}请先解压服务端(untar), 再使用此命令${CEND}"; exit 1; }
+[ -d "$TLBB_PATH" ] || { echo "${CRED}请先解压服务端(untar), 再使用此命令${CEND}"; exit 1; }
 
 # 解析 run.sh 提取启动命令
 parse_run_sh() {
@@ -85,14 +91,14 @@ parse_run_sh() {
 
 # 执行 billing (可选)
 run_billing() {
-    if [ -d /home/billing ]; then
+    if [ -d /home/billing ] && [ -f /home/billing/billing ]; then
         cd /home/billing
         ./billing stop 2>/dev/null
         ./billing up -d && echo "${CSUCCESS}启动 [BILLING] 服务成功, 请耐心等待几分钟. 建议使用【 runtop 】查看情况!!${CEND}" && return 0
         echo "${CRED}启动 [BILLING] 服务失败!${CEND}"
         return 1
     fi
-    echo "${CWARNING}未找到 billing 目录, 跳过 billing 启动${CEND}"
+    echo "${CWARNING}未找到 billing 程序 (/home/billing/billing), 跳过 billing 启动${CEND}"
     return 0
 }
 
@@ -129,7 +135,7 @@ main() {
     fi
 
     local has_billing=0
-    [ -d /home/billing ] && has_billing=1
+    [ -d /home/billing ] && [ -f /home/billing/billing ] && has_billing=1
 
     # 单参数: 直接执行指定步骤
     if [ $# -eq 1 ]; then

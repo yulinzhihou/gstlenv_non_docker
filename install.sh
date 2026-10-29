@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ============================================================
 # TLBB 原生环境万能安装器 (src/install.sh)
 # ------------------------------------------------------------
 # 以源码方式开发: 非 Docker, 直接在本机系统安装完整环境
-# 参考 gstlenv(开源 Docker 版) 的命令体系, 提供 tl_* 全局管理命令
+# 参考 gstlenv(开源 Docker 版) 的命令体系, 部署 gs 原命令名
 # ------------------------------------------------------------
 # 用法:
 #   bash install.sh                     # 交互模式 (自动检测在线/离线)
@@ -25,7 +25,7 @@
 #   3) 安装数据库 (MySQL 5.1 / 5.7 / 8.0 多档位, 不用 MariaDB)
 #   4) 安装 unixODBC + MySQL ODBC 驱动 (32 位 + 64 位)
 #   5) 导入 tlbbdb / web 库
-#   6) 部署 tl_* 全局管理命令 (参考 gstlenv)
+#   6) 部署 gs 原命令名 (untar/setini/runtlbb/... 与 gstlenv 完全一致) + gsctl 统一入口
 # ============================================================
 
 export LC_ALL=C
@@ -37,41 +37,106 @@ for m in modules/common.sh modules/detect.sh modules/rhel/install.sh modules/deb
     if [ -f "$PKG_ROOT/$m" ]; then source "$PKG_ROOT/$m"; else echo "[错误] 缺少模块: $m"; exit 1; fi
 done
 
-# ---------- 生成运行环境文件 (类似 gstlenv /root/.gs/.env) ----------
+# ---------- 生成运行环境文件 (对齐 gstlenv /root/.gs/.env) ----------
 gen_env() {
-    local env_dir=/root/.tlbb
-    mkdir -p "$env_dir" /home/tlbb /root/tlbb 2>/dev/null
+    local env_dir=/root/.gs
+    mkdir -p "$env_dir" /tlgame /tlgame/backup /tlgame/www/ow /tlgame/www/gm /tlgame/conf.d /tlgame/billing /root/.tlgame 2>/dev/null
     local mver; mver=$(select_mysql_version)
-    cat > "$env_dir/tlbb.env" <<EOF
-# TLBB 原生环境配置 (由 install.sh 生成, 默认值对齐 gstlenv env.sample)
-TLBB_HOME=/home/tlbb
-TLBB_ROOT=/root/tlbb
-TLBB_DB_HOST=127.0.0.1
-TLBB_DB_PORT=${TLBB_MYSQL_PORT}
-TLBB_DB_USER=root
-TLBB_DB_PASS=${TLBB_DB_PASS}
-TLBB_DB_NAME=tlbbdb
-TLBB_WEB_DB=web
-TLBB_ODBC_INI=/etc/odbc.ini
+    cat > "$env_dir/.env" <<EOF
+# TLBB 原生环境配置 (由 install.sh 生成, 变量名/默认值对齐 gstlenv env.sample)
+VERSION=v2.8.28
+UPDATE=$(date +%Y-%m-%d)
+SUFFIX=.tar.gz
+
+# 备份目录
+BACKUP_DIR=/tlgame/backup
+
+# 环境配置根目录 (原生: /root/.gs, 与 gstlenv 一致)
+GSDIR=.gs
+ROOT_PATH=/root
+CONFIG_FILE=.env
+GS_WHOLE_PATH=/root/.gs/.env
+
+# 游戏内注册=0，登录器注册=1
+IS_DEFAULT_DLQ=0
+IS_DLQ=0
+
+# BILLING验证服务器IP
+BILLING_DEFAULT_SERVER_IPADDR=127.0.0.1
+BILLING_SERVER_IPADDR=127.0.0.1
+
+# 环境包安装目录 (原生: src 包所在目录, 由安装器自动写入)
+GS_PROJECT=${PKG_ROOT}
 TLBB_PROJECT_DIR=${PKG_ROOT}
-TLBB_ENV_VERSION=2.0
 
-# MySQL 档位 (对齐 gstlenv: 1=CS6+5.1  2=CS7+5.1  3=CS7+5.7  4=CS9+8.0)
+# 离线包上传路径以及名称 (原生预留)
+OFFLINE_TAR=/root/gstlenv_offline.tar.gz
+
+# 宿主机器与容器共享的文件夹 (原生: /tlgame 数据根目录)
+SHARED_DIR=/tlgame
+
+# BILLING 验证端口配置
+BILLING_DEFAULT_PORT=21818
+BILLING_PORT=21818
+
+# MYSQL 监听端口 (原生: 本机直连, 默认 3306)
+TL_MYSQL_DEFAULT_PORT=3306
+TL_MYSQL_PORT=3306
+
+# 默认服务端登录网关端口
+LOGIN_DEFAULT_PORT=13580
+LOGIN_PORT=13580
+
+# 默认服务端游戏网关端口
+SERVER_DEFAULT_PORT=15680
+SERVER_PORT=15680
+
+# WEB 访问端口
+WEB_DEFAULT_PORT=51888
+WEB_PORT=51888
+WEB_DEFAULT_HTTPS_PORT=51443
+WEB_HTTPS_PORT=51443
+
+# WEB GM访问端口
+WEB_GM_DEFAULT_PORT=61888
+WEB_GM_PORT=61888
+
+# MYSQL 用户
+TL_MYSQL_USER=gs
+
+# MYSQL root密码
+TL_MYSQL_DEFAULT_PASSWORD=123456
+TL_MYSQL_PASSWORD=${TLBB_DB_PASS}
+
+# TL服务端在宿主主机路径 (原生: /tlgame/tlbb, 与 gstlenv 一致)
+TLBB_PATH=/tlgame/tlbb
+TLBB_HOME=/tlgame
+
+# 容器时区
+TZ=Asia/Shanghai
+
+# Redis 配置
+REDIS_HOST_PORT=6379
+
+# 默认环境编号
+DEFAULT_ENV_INDEX=1
+
+# GM工具对应的配置
+LOGIN_DEFAULT_USER_NAME=gsgameshare
+LOGIN_USER_NAME=gsgameshare
+LOGIN_DEFAULT_PASSWORD=gsgameshare.com
+LOGIN_PASSWORD=gsgameshare.com
+PRIVATE_DEFAULT_KEY=Gsgameshare.com2025
+PRIVATE_KEY=Gsgameshare.com2025
+REDIS_PASSWORD=gsgameshare.com
+REDIS_DEFAULT_PASSWORD=gsgameshare.com
+
+# 原生新增: MySQL 档位 (对齐 gstlenv 环境编号: 1=CS6+5.1 2=CS7+5.1 3=CS7+5.7 4=CS9+8.0)
 TLBB_MYSQL_VERSION=${mver}
-TLBB_MYSQL_PORT=${TLBB_MYSQL_PORT}
 TLBB_MYSQL_USER=${TLBB_MYSQL_USER}
-TLBB_MYSQL_PASSWORD=${TLBB_MYSQL_PASSWORD}
-
-# 服务端口 (gstlenv 默认值)
-TLBB_BILLING_PORT=${TLBB_BILLING_PORT}
-TLBB_LOGIN_PORT=${TLBB_LOGIN_PORT}
-TLBB_SERVER_PORT=${TLBB_SERVER_PORT}
-TLBB_WEB_PORT=${TLBB_WEB_PORT}
-TLBB_WEB_GM_PORT=${TLBB_WEB_GM_PORT}
-TLBB_TZ=${TLBB_TZ}
 EOF
-    chmod 600 "$env_dir/tlbb.env"
-    log "运行环境文件已生成: $env_dir/tlbb.env"
+    chmod 600 "$env_dir/.env"
+    log "运行环境文件已生成: $env_dir/.env (对齐 gstlenv env.sample)"
 }
 
 # ---------- MySQL 档位选择交互 (对齐 gstlenv 环境编号菜单) ----------
@@ -94,9 +159,9 @@ ask_mysql_version() {
     log "数据库版本: MySQL ${TLBB_MYSQL_VERSION}"
 }
 
-# ---------- 部署全局管理命令 (参考 gstlenv set_command) ----------
+# ---------- 部署全局管理命令 (参考 gstlenv set_command, 只部署 gs 原命令名) ----------
 install_cmd() {
-    log "部署全局管理命令 (gs 原名 + tl_ 兼容名)..."
+    log "部署全局管理命令 (gs 原命令名, 与 gstlenv 完全一致)..."
     local cmd_dir="$PKG_ROOT/cmd"
     [ -d "$cmd_dir" ] || { warn "未找到 cmd/ 目录, 跳过命令安装"; return 0; }
     local count=0
@@ -111,13 +176,14 @@ install_cmd() {
         fi
         # gs 原名 (对齐 gstlenv 命令体系: untar/setini/runtlbb/...)
         cp -f "$f" "/usr/local/bin/${name}" && chmod +x "/usr/local/bin/${name}"
-        # tl_ 前缀兼容名 (tl 菜单除外)
-        if [ "$name" != "tl" ]; then
-            cp -f "$f" "/usr/local/bin/tl_${name}" && chmod +x "/usr/local/bin/tl_${name}"
-        fi
         count=$((count + 1))
     done
-    log "命令安装完成: 共 ${count} 个命令 (输入 gs 查看帮助 / tl 查看菜单)"
+    # gsctl 统一入口 (gsctl <命令> [参数], 替代原 tl_* 前缀)
+    if [ -f "$cmd_dir/gsctl.sh" ]; then
+        cp -f "$cmd_dir/gsctl.sh" /usr/local/bin/gsctl && chmod +x /usr/local/bin/gsctl
+        count=$((count + 1))
+    fi
+    log "命令安装完成: 共 ${count} 个命令 (输入 gs 查看帮助 / gsctl <命令> 统一入口)"
 }
 
 # ---------- 完成横幅 ----------
@@ -131,9 +197,9 @@ finish_banner() {
     echo "  库     : tlbbdb, web"
     echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
     echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
-    echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar (或 tl_untar)"
-    echo "  启动   : setini && runtlbb   状态: runtop (或 tl_setini/tl_runtlbb)"
-    echo "  帮助   : gs (命令帮助)  /  tl (菜单)"
+    echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar"
+    echo "  启动   : setini && runtlbb   状态: runtop"
+    echo "  帮助   : gs (命令帮助)  /  gsctl <命令> (统一入口)"
     echo "  端口   : 数据库 ${TLBB_MYSQL_PORT} | 登录 ${TLBB_LOGIN_PORT} | 游戏 ${TLBB_SERVER_PORT} | billing ${TLBB_BILLING_PORT} | web ${TLBB_WEB_PORT}/${TLBB_WEB_GM_PORT}"
     echo "          (默认对齐 gstlenv, 请按需在安全组放行)"
     echo "=============================================================="

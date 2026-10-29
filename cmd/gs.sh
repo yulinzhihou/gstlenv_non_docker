@@ -1,14 +1,16 @@
-#!/bin/bash
-# ============================================================
-# gs - 帮助命令 (参考 gstlenv gs.sh, 原生版)
-# 用法:
-#   gs          查看全部命令帮助菜单
-#   gs 01 / gs 1 / gs untar   查看并执行对应命令
-# ============================================================
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 帮助命令 (交互与 gstlenv gs.sh 一致)
 [ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
 
 show_help() {
 cat <<EFF
@@ -22,6 +24,7 @@ ${CYELLOW}###########################################
 #    用法1: gs 01  获取第一个命令帮助文档 
 #    用法2: gs 1  获取第一个命令帮助文档  
 #    用法3: gs untar 获取第一个命令帮助文档
+#    统一入口: gsctl <命令> [参数...]      
 #                                         
 ###########################################
 #    01:untar      解压服务端             
@@ -58,7 +61,7 @@ ${CYELLOW}###########################################
 EFF
 }
 
-# 命令执行/帮助分发
+# 命令执行/帮助分发 (对齐 gstlenv: 打印帮助后直接执行)
 CMD_MAP="untar setini runtlbb runtop link swap rebuild remove setconfig change restart gsbak upcmd upgm upow step gstl backup close gslog rmlog curgs setpoint reset setvalid restore delbak gsfix logbak"
 
 run_or_help() {
@@ -66,7 +69,6 @@ run_or_help() {
     echo ""
     echo "${CGREEN}==> 命令: ${CRED}${name}${CEND} ${CGREEN}(执行中)${CEND}"
     echo ""
-    # 帮助文本 + 执行 (对齐 gstlenv: 打印帮助后直接执行)
     case "$name" in
         untar)    echo "${CGREEN}untar: 解压服务端压缩包(tlbb.tar.gz/tlbb.zip), 需上传到 /root${CEND}"; untar;;
         setini)   echo "${CGREEN}setini: 自动设置服务器配置文件(3个ini + 数据库连接 + billing)${CEND}"; setini;;
@@ -108,9 +110,9 @@ else
         0|q|Q) exit 0;;
         [0-9]*)
             # 数字序号 -> 命令名
-            local n; n=$((10#$1))
+            n=$((10#$1))
             if [ $n -ge 1 ] && [ $n -le 29 ]; then
-                local cmdname; cmdname=$(echo "$CMD_MAP" | awk -v i="$n" '{print $i}')
+                cmdname=$(echo "$CMD_MAP" | awk -v i="$n" '{print $i}')
                 run_or_help "$cmdname"
             else
                 echo "${CRED}序号无效(1~29)${CEND}"; exit 1

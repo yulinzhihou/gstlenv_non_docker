@@ -1,15 +1,101 @@
-#!/bin/bash
-# ============================================================
-# tl_gslog - 查看服务端日志 (参考 gstlenv gslog)
-# 用法: tl_gslog [行数]  默认最后 50 行, 实时跟踪用 -f
-# ============================================================
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-ARG="${1:-50}"
-LOG=""
-for f in /root/tlbb_server.log "$TLBB_HOME"/tlbb/log/*.log "$TLBB_HOME"/log/*.log; do
-    [ -f "$f" ] && { LOG="$f"; break; }
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
+[ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 一键启动开服日志查看
+if [ ! -f /root/.gs/.env ]; then
+    echo -e "${GSISSUE}\r\n"
+    echo "${CRED}环境未初始化，需要重新安装或者移除现有的环境重新安装！！！${CEND}"
+    exit 1
+fi
+
+TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+
+# 查看日志方法
+function tail_log_file() {
+    cd ${TLBB_PATH}"/Server/Log" &&
+        LOGFILENAME=$(ls -t | grep "${INPUTNAME}" | head -n1 | awk '{print $0}')
+    tail -n 100 -f ${LOGFILENAME}
+}
+
+while :; do
+    # 先判断目录是否存在
+    if [ -d ${TLBB_PATH}"/Server/Log" ]; then
+        for ((time = 2; time >= 0; time--)); do
+            echo -ne "\r正准备查看日志动态！！,【${time}】秒请使用完一定记得关闭（命令【rmlog】）。不然日志可能会挤爆服务器硬盘！${CEND}"
+            sleep 1
+        done
+        while :; do
+            echo
+            echo -e "
+※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※
+◎ ${CRED}切记 ！！！看完日志需要退出请按 CTRL+C 退出！${CEND}
+◎ ${CRED}如果想一次性查看所有日志，需要多开ssh容器分开运行${CEND}
+◎ ${CRED}如若需要再查看其他日志，请重新进行本命令！${CEND}
+◎ ${CRED}切记 ！！！查看完日志后，请使用【rmlog】命令进行清除，小心挤爆人的服务器${CEND}
+◎ [1]：查看 [BILLING] 日志,只有用本服务器billing才能查看
+◎ [2]：查看 [ShareMemory] ShareMemory进程日志
+◎ [3]：查看 [Login] Login进程日志
+◎ [4]：查看 [World] World进程日志
+◎ [5]：查看 [Lua] 脚本报错日志
+◎ [6]：查看 [debug] 引擎调试(系统相关)日志
+◎ [7]：查看 [Debug] 引擎调试(角色相关)日志
+◎ [0]：查看 [error] 全局报错日志
+◎ [q]：退出按 q 或者 Q，也可以按 CTRL+C 退出！
+※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※※"
+            read -e -p "请选择功能 输入序号并回车：" num
+            case "$num" in
+            '1')
+                INPUTNAME='billing'
+                if [ -f "/home/billing/log.log" ] || [ -f "/tlgame/billing/log.log" ]; then
+                    tail -f /home/billing/log.log 2>/dev/null || tail -f /tlgame/billing/log.log 2>/dev/null
+                else
+                    echo -e "${CRED}未发现日志文件，请按 CTRL+C 退出！${CEND}"
+                fi
+                ;;
+            '2')
+                INPUTNAME='ShareMemory'
+                tail_log_file
+                ;;
+            '3')
+                INPUTNAME='login'
+                tail_log_file
+                ;;
+            '4')
+                INPUTNAME='world'
+                tail_log_file
+                ;;
+            '5')
+                INPUTNAME='lua'
+                tail_log_file
+                ;;
+            '6')
+                INPUTNAME='debug'
+                tail_log_file
+                ;;
+            '7')
+                INPUTNAME='Debug'
+                tail_log_file
+                ;;
+            'q' | 'Q')
+                break
+                exit 0
+                ;;
+            * | "0")
+                INPUTNAME='error'
+                tail_log_file
+                ;;
+            esac
+        done
+    else
+        mkdir -p ${TLBB_PATH}"/Server/Log"
+    fi
+    break
 done
-[ -z "$LOG" ] && { echo "(未找到日志文件, 请先启动服务端)"; exit 1; }
-echo "===== 日志: $LOG ====="
-if [ "$ARG" = "-f" ]; then tail -f "$LOG"; else tail -n "$ARG" "$LOG"; fi

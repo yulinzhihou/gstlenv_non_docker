@@ -1,17 +1,24 @@
-#!/bin/bash
-# ============================================================
-# transfer - 重新构建环境版本 (参考 gstlenv transfer.sh, 原生版)
+#!/usr/bin/env bash
+# 设置字符编码，确保中文正常显示
+{
+    export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
+    export LC_ALL=C.UTF-8 2>/dev/null || export LC_ALL=en_US.UTF-8 2>/dev/null || export LC_ALL=POSIX 2>/dev/null || true
+} 2>/dev/null
+# 引入全局参数
+[ -f /root/.gs/.env ] && . /root/.gs/.env
+# 颜色代码
+[ -f /usr/local/bin/color ] && . /usr/local/bin/color
+
+# comment: 重新构建环境版本 (参考 gstlenv transfer.sh, 原生版)
 # 原生环境按本机系统直接构建, 版本选择对应: 引擎类型/数据库版本
 # 用法:
 #   transfer          交互式选择环境版本
 #   transfer 1|2|3|4  指定版本直接构建
 # 1=Centos6+Mysql5.1(老品种) 2=Centos7+Mysql5.1 3=Centos7+Mysql5.7 4=Centos9+Mysql8.0
 # ============================================================
-[ -f /usr/local/bin/color ] && . /usr/local/bin/color
-[ $(id -u) != "0" ] && { echo "${CFAILURE}错误: 你必须使用ROOT用户${CEND}"; exit 1; }
-[ -f /root/.tlbb/tlbb.env ] && . /root/.tlbb/tlbb.env
-TLBB_HOME="${TLBB_HOME:-/home/tlbb}"
-BACKUP_DIR="$TLBB_HOME/backup"
+TLBB_HOME="${TLBB_HOME:-/tlgame}"
+TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+BACKUP_DIR="${BACKUP_DIR:-/tlgame/backup}"
 mkdir -p "$BACKUP_DIR"
 
 # 检测当前系统对应版本号
@@ -30,7 +37,7 @@ DEFAULT_ENV_INDEX=$(detect_current_index)
 # 备份数据库+版本 (对齐 gstlenv)
 backup_data() {
     echo "正在备份版本数据请稍候......"
-    if [ -d "$TLBB_HOME/tlbb" ]; then
+    if [ -d "$TLBB_PATH" ]; then
         tar zcf "$BACKUP_DIR/tlbb-setconfig-backup.tar.gz" -C "$TLBB_HOME" tlbb 2>/dev/null && \
             echo "${CSUCCESS}版本备份完成: $BACKUP_DIR/tlbb-setconfig-backup.tar.gz${CEND}"
     fi
