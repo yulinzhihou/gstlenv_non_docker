@@ -167,7 +167,21 @@ rhel_download_mysql_rpm() {
     arch=$(uname -m); [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
     # 已装则直接跳过 (重跑安装器时不重复下载)
     rpm -q mysql-community-server >/dev/null 2>&1 && { log "MySQL ${ver} 已安装, 跳过 rpm 直下"; return 0; }
-    local base="https://repo.mysql.com/yum/mysql-${ver}-community/el/${rel}/${arch}"
+    # MySQL 官方源目录结构已变更: 新路径 mysql-8.0-community/el/N/arch (2024+),
+    # 老路径 mysql80-community/el/N/arch / mysql80-community-elN-arch 部分环境仍有效.
+    # 逐路径探测 repodata, 选第一个可达的 base (el9 实测: mysql-8.0-community/el/9/x86_64 200).
+    local nv; case "$ver" in 57) nv="5.7";; 80) nv="8.0";; *) nv="$ver";; esac
+    local base=""
+    for b in \
+        "https://repo.mysql.com/yum/mysql-${nv}-community/el/${rel}/${arch}" \
+        "https://repo.mysql.com/yum/mysql${ver}-community/el/${rel}/${arch}" \
+        "https://repo.mysql.com/yum/mysql${ver}-community-el${rel}-${arch}"; do
+        if curl -s --connect-timeout 8 --max-time 20 -o /dev/null -w "%{http_code}" "$b/repodata/repomd.xml" | grep -q "^200"; then
+            base="$b"; break
+        fi
+    done
+    [ -z "$base" ] && { warn "所有 MySQL 源路径均不可达 (repodata 探测失败)"; return 1; }
+    log "MySQL 源路径命中: $base"
     local tmpd="/tmp/tlbb-mysql-rpm"; rm -rf "$tmpd"; mkdir -p "$tmpd"
     log "源安装失败, 兜底: curl 直下 MySQL ${ver} rpm 本地安装 (绕过 dnf 指纹分流)"
     # 1. repomd -> primary
@@ -275,7 +289,11 @@ rhel_install_db() {
         80)
             log "安装 MySQL 8.0 (官方源)..."
             local rel8; rel8="${SYS_BRANCH#el}"
-            if ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
+            # el9+ (CentOS Stream 9 / RHEL9+ / Rocky/Alma 9): 系统 AppStream 自带 MySQL 8.0 包,
+            # 官方源 el9 目录结构已变更易 404, 优先走系统源 (实测 CentOS Stream 9 mysql-server=8.0.46)
+            if [ "$rel8" -ge 9 ] 2>/dev/null && rhel_pkg_install mysql-server; then
+                log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
+            elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
                 rhel_download_mysql_rpm 80 "$rel8" || die "MySQL 8.0 安装失败(源与直下均失败)"
             fi
             ;;
