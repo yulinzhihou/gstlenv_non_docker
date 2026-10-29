@@ -38,9 +38,10 @@
 | Ubuntu | 20.04 / 22.04 / 24.04 / 25.x / 26.x | 阿里云/腾讯/华为 |
 | Ubuntu | 20.10 / 21.x / 22.10 / 23.x / 24.10 | old-releases + 清华 |
 | Debian | 10 (buster) | archive.debian.org + 清华 |
-| Debian | 11 (bullseye) | 阿里云 + 归档兜底 |
-| Debian | 12 (bookworm) / 13 (trixie) | 阿里云/腾讯/华为 |
+| Debian | 11 (bullseye) | 阿里云 + 归档兜底；**MySQL 官方 apt 8.0.37 离线包已入库** |
+| Debian | 12 (bookworm) / 13 (trixie) | 阿里云/腾讯/华为；**MySQL 官方 apt 8.0.37 离线包已入库** |
 | Debian | 14~18（未来版） | 自动回退最新稳定版 |
+| Fedora | 34 ~ 38 | archive.fedoraproject.org；**MySQL 8.0.36 官方通用二进制 + compat/odbc/redis 离线包已入库** |
 
 - 本教程支持各种云服务器，虚拟机系统，**可在线，可离线**
 - 增加敏感配置项可以自定义，简单方便。如：数据库密码，端口等（`setconfig`）
