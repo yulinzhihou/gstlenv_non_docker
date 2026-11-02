@@ -203,7 +203,7 @@ rhel_download_mysql_rpm() {
     local files
     files=$(zcat "$tmpd/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
         grep -E "mysql-community-(server|client|client-plugins|libs|common|icu-data-files)-[0-9]" | grep -vE "debug|devel|test|backup|router|shell|connector" | \
-        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3} a[k]=$0 END{for(k in a) print a[k]}')
+        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3; a[k]=$0} END{for(k in a) print a[k]}')
     [ -z "$files" ] && { warn "primary 中未解析到 rpm 文件名"; return 1; }
     # 3. 逐个下载
     local f ok=1
@@ -217,6 +217,38 @@ rhel_download_mysql_rpm() {
     rpm -ivh "$tmpd"/*.rpm --nodeps --force >/dev/null 2>&1 || { warn "rpm 本地安装失败"; return 1; }
     log "MySQL ${ver} rpm 直下安装完成 (最新版)"
     return 0
+}
+
+# ---------- 在线源+直下均失败时, 自动降级本地离线包 ----------
+# offline/rpm-packages/<branch>/mysql<ver>/*.rpm 已备齐的环境 (断网/代理/TLS指纹分流场景)
+rhel_fallback_offline_rpm() {
+    local mver; mver=$(select_mysql_version)
+    local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH/mysql${mver}"
+    # 兼容旧结构: <branch>/ 根下放 rpm
+    [ -d "$rdir" ] || rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
+    if [ ! -d "$rdir" ] || ! ls "$rdir"/*.rpm >/dev/null 2>&1; then
+        warn "本地离线包目录不存在或为空: $rdir"
+        return 1
+    fi
+    warn "在线源与直下均失败, 自动降级本地离线包: $rdir"
+    local installed=0 skipped=0 r pkgname
+    for r in "$rdir"/*.rpm; do
+        pkgname=$(rpm -qp --qf '%{NAME}' "$r" 2>/dev/null)
+        [ -z "$pkgname" ] && continue
+        if rpm -q "$pkgname" >/dev/null 2>&1; then
+            skipped=$((skipped + 1)); continue
+        fi
+        rpm -ivh "$r" --nodeps --force >/dev/null 2>&1 && installed=$((installed + 1))
+    done
+    log "离线降级安装: 新装 ${installed} 个, 已存在跳过 ${skipped} 个"
+    # 验证 mysql-server 是否装上
+    if rpm -q mysql-server >/dev/null 2>&1 || rpm -q mysql-community-server >/dev/null 2>&1; then
+        log "MySQL 本地离线包降级安装成功"
+        return 0
+    fi
+    warn "mysql-server 未装上 (依赖缺失), 尝试整目录强制安装..."
+    rpm -ivh "$rdir"/*.rpm --nodeps --force >/dev/null 2>&1 || return 1
+    rpm -q mysql-server >/dev/null 2>&1 || rpm -q mysql-community-server >/dev/null 2>&1
 }
 
 # ---------- 安装数据库 ----------
@@ -307,7 +339,8 @@ rhel_install_db() {
             local rel7; rel7="${SYS_BRANCH#el}"
             # MySQL 5.7 无 el8+ 官方包, config 内部会自动切 8.0
             if ! rhel_config_mysql_repo 57 || ! rhel_pkg_install mysql-community-server; then
-                rhel_download_mysql_rpm 57 "$rel7" || die "MySQL 5.7 安装失败(源与直下均失败)"
+                rhel_download_mysql_rpm 57 "$rel7" || \
+                rhel_fallback_offline_rpm || die "MySQL 5.7 安装失败(源/直下/离线包均失败)"
             fi
             ;;
         80)
@@ -318,7 +351,8 @@ rhel_install_db() {
             if [ "$rel8" -ge 9 ] 2>/dev/null && rhel_pkg_install mysql-server; then
                 log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
             elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
-                rhel_download_mysql_rpm 80 "$rel8" || die "MySQL 8.0 安装失败(源与直下均失败)"
+                rhel_download_mysql_rpm 80 "$rel8" || \
+                rhel_fallback_offline_rpm || die "MySQL 8.0 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
             fi
             ;;
         *) die "不支持的 MySQL 版本: $mver (可选 51|57|80)";;
