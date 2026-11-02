@@ -149,32 +149,49 @@ off_get() {
 
 # ---------- 数据库密码交互 ----------
 ask_dbpass() {
-    # 默认密码 123456 (对齐 gstlenv), 交互时可修改
-    TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"
-    if [ "$TLBB_NONINTERACTIVE" = "1" ]; then
-        [ -n "$TLBB_DB_PASS" ] || die "非交互模式需要提供环境变量 TLBB_DB_PASS"
+    # 如果用户已通过环境变量指定, 直接用
+    if [ -n "${TLBB_DB_PASS:-}" ]; then
+        export TLBB_DB_PASS
         return
     fi
-    # 管道模式 (curl | bash) 下 stdin 是管道, 检测 /dev/tty 是否可用
+    # 非交互模式: 生成随机密码 (安全, 避免固定弱密码)
+    if [ "$TLBB_NONINTERACTIVE" = "1" ]; then
+        # 生成 12 位随机密码 (字母+数字)
+        TLBB_DB_PASS=$(head -c 512 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 12)
+        export TLBB_DB_PASS
+        warn "已自动生成随机数据库密码: ${TLBB_DB_PASS} (可在 curgs 命令中查看)"
+        return
+    fi
+    # 检测 stdin 是否为终端 (curl | bash 管道模式下 stdin 不是 tty,
+    # 此时 read 会从管道读到脚本内容, 导致密码被错误赋值)
     local __read_src
     if [ -t 0 ]; then
         __read_src=""
     elif [ -r /dev/tty ]; then
         __read_src="< /dev/tty"
     else
-        # 完全无终端, 用默认密码
-        warn "检测到非交互模式 (无终端), 使用默认密码 ${TLBB_DB_PASS}"
-        warn "如需自定义密码, 请执行: TLBB_DB_PASS=你的密码 bash install.sh"
+        # 完全无终端, 生成随机密码
+        TLBB_DB_PASS=$(head -c 512 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 12)
         export TLBB_DB_PASS
+        warn "检测到非交互模式, 已自动生成随机数据库密码: ${TLBB_DB_PASS}"
+        warn "如需自定义密码, 请执行: TLBB_DB_PASS=你的密码 bash install.sh"
         return
     fi
-    if [ -z "${TLBB_DB_PASS_CONFIRMED:-}" ]; then
-        eval "read -p \"数据库 root/gs 密码 (默认: ${TLBB_DB_PASS}, 直接回车使用默认): \" p1 $__read_src"
-        [ -n "$p1" ] && TLBB_DB_PASS="$p1"
+    # 交互模式: 询问用户是否使用默认随机密码
+    echo -e "${CGREEN}数据库密码配置${CEND}"
+    echo "  默认: 自动生成 12 位随机密码 (安全, 可在 curgs 中查看)"
+    echo "  自定义: 输入你想要的密码"
+    local __read_src2="$__read_src"
+    eval "read -e -p \"请输入密码 (直接回车=随机生成): \" p1 $__read_src2"
+    if [ -z "$p1" ]; then
+        TLBB_DB_PASS=$(head -c 512 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 12)
+        log "已生成随机数据库密码: ${TLBB_DB_PASS}"
+    else
+        TLBB_DB_PASS="$p1"
         if [ "${#TLBB_DB_PASS}" -lt 6 ]; then
-            warn "密码长度至少 6 位, 使用默认值 ${TLBB_DB_PASS}"
+            warn "密码长度至少 6 位, 已自动追加为安全长度"
+            TLBB_DB_PASS="${TLBB_DB_PASS}$(head -c 100 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 6)"
         fi
-        TLBB_DB_PASS_CONFIRMED=1
     fi
     export TLBB_DB_PASS
 }

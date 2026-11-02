@@ -403,7 +403,8 @@ rhel_start_db() {
     # 等待就绪 (5.7/8.0 首启需先完成初始化)
     local i
     for i in $(seq 1 20); do
-        mysqladmin ping >/dev/null 2>&1 && { log "数据库已就绪"; return 0; }
+        # mysqladmin ping 加 </dev/null, 避免交互式 Enter password: 提示
+        mysqladmin ping </dev/null >/dev/null 2>&1 && { log "数据库已就绪"; return 0; }
         sleep 2
     done
     warn "数据库未完全就绪, 继续尝试..."
