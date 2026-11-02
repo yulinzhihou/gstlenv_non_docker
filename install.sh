@@ -44,36 +44,36 @@ gen_env() {
     local mver; mver=$(select_mysql_version)
     cat > "$env_dir/.env" <<EOF
 # TLBB 原生环境配置 (由 install.sh 生成, 变量名/默认值对齐 gstlenv env.sample)
-VERSION=v2.8.28
-UPDATE=$(date +%Y-%m-%d)
-SUFFIX=.tar.gz
+VERSION="v2.8.28"
+UPDATE="$(date +%Y-%m-%d)"
+SUFFIX=".tar.gz"
 
 # 备份目录
-BACKUP_DIR=/tlgame/backup
+BACKUP_DIR="/tlgame/backup"
 
 # 环境配置根目录 (原生: /root/.gs, 与 gstlenv 一致)
-GSDIR=.gs
-ROOT_PATH=/root
-CONFIG_FILE=.env
-GS_WHOLE_PATH=/root/.gs/.env
+GSDIR=".gs"
+ROOT_PATH="/root"
+CONFIG_FILE=".env"
+GS_WHOLE_PATH="/root/.gs/.env"
 
 # 游戏内注册=0，登录器注册=1
 IS_DEFAULT_DLQ=0
 IS_DLQ=0
 
 # BILLING验证服务器IP
-BILLING_DEFAULT_SERVER_IPADDR=127.0.0.1
-BILLING_SERVER_IPADDR=127.0.0.1
+BILLING_DEFAULT_SERVER_IPADDR="127.0.0.1"
+BILLING_SERVER_IPADDR="127.0.0.1"
 
 # 环境包安装目录 (原生: src 包所在目录, 由安装器自动写入)
-GS_PROJECT=${PKG_ROOT}
-TLBB_PROJECT_DIR=${PKG_ROOT}
+GS_PROJECT="${PKG_ROOT}"
+TLBB_PROJECT_DIR="${PKG_ROOT}"
 
 # 离线包上传路径以及名称 (原生预留)
-OFFLINE_TAR=/root/gstlenv_offline.tar.gz
+OFFLINE_TAR="/root/gstlenv_offline.tar.gz"
 
 # 宿主机器与容器共享的文件夹 (原生: /tlgame 数据根目录)
-SHARED_DIR=/tlgame
+SHARED_DIR="/tlgame"
 
 # BILLING 验证端口配置
 BILLING_DEFAULT_PORT=21818
@@ -102,18 +102,18 @@ WEB_GM_DEFAULT_PORT=61888
 WEB_GM_PORT=61888
 
 # MYSQL 用户
-TL_MYSQL_USER=gs
+TL_MYSQL_USER="gs"
 
-# MYSQL root密码
-TL_MYSQL_DEFAULT_PASSWORD=123456
-TL_MYSQL_PASSWORD=${TLBB_DB_PASS}
+# MYSQL root密码 (加双引号, 避免密码含空格/特殊字符时导致 source 报错)
+TL_MYSQL_DEFAULT_PASSWORD="123456"
+TL_MYSQL_PASSWORD="${TLBB_DB_PASS}"
 
 # TL服务端在宿主主机路径 (原生: /tlgame/tlbb, 与 gstlenv 一致)
-TLBB_PATH=/tlgame/tlbb
-TLBB_HOME=/tlgame
+TLBB_PATH="/tlgame/tlbb"
+TLBB_HOME="/tlgame"
 
 # 容器时区
-TZ=Asia/Shanghai
+TZ="Asia/Shanghai"
 
 # Redis 配置
 REDIS_HOST_PORT=6379
@@ -122,18 +122,18 @@ REDIS_HOST_PORT=6379
 DEFAULT_ENV_INDEX=1
 
 # GM工具对应的配置
-LOGIN_DEFAULT_USER_NAME=gsgameshare
-LOGIN_USER_NAME=gsgameshare
-LOGIN_DEFAULT_PASSWORD=gsgameshare.com
-LOGIN_PASSWORD=gsgameshare.com
-PRIVATE_DEFAULT_KEY=Gsgameshare.com2025
-PRIVATE_KEY=Gsgameshare.com2025
-REDIS_PASSWORD=gsgameshare.com
-REDIS_DEFAULT_PASSWORD=gsgameshare.com
+LOGIN_DEFAULT_USER_NAME="gsgameshare"
+LOGIN_USER_NAME="gsgameshare"
+LOGIN_DEFAULT_PASSWORD="gsgameshare.com"
+LOGIN_PASSWORD="gsgameshare.com"
+PRIVATE_DEFAULT_KEY="Gsgameshare.com2025"
+PRIVATE_KEY="Gsgameshare.com2025"
+REDIS_PASSWORD="gsgameshare.com"
+REDIS_DEFAULT_PASSWORD="gsgameshare.com"
 
 # 原生新增: MySQL 档位 (对齐 gstlenv 环境编号: 1=CS6+5.1 2=CS7+5.1 3=CS7+5.7 4=CS9+8.0)
-TLBB_MYSQL_VERSION=${mver}
-TLBB_MYSQL_USER=${TLBB_MYSQL_USER}
+TLBB_MYSQL_VERSION="${mver}"
+TLBB_MYSQL_USER="${TLBB_MYSQL_USER}"
 EOF
     chmod 600 "$env_dir/.env"
     log "运行环境文件已生成: $env_dir/.env (对齐 gstlenv env.sample)"
