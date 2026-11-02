@@ -60,8 +60,11 @@ select_mysql_version() {
 # ---------- 颜色/日志 ----------
 C_GREEN=$'\033[32m'; C_RED=$'\033[31m'; C_YELLOW=$'\033[33m'
 C_BLUE=$'\033[34m'; C_BOLD=$'\033[1m'; C_NONE=$'\033[0m'
+# 兼容 gstlenv 风格颜色变量 (CPURPLE/CCYAN/CEND 等)
+CGREEN=$'\033[32m'; CRED=$'\033[31m'; CYELLOW=$'\033[33m'
+CBLUE=$'\033[34m'; CPURPLE=$'\033[35m'; CCYAN=$'\033[36m'; CEND=$'\033[0m'
 
-log()  { echo -e "${C_GREEN}[TLBB]${C_NONE} $*"; }
+log()  { echo -e "${C_GREEN}[GS游享环境]${C_NONE} $*"; }
 warn() { echo -e "${C_YELLOW}[警告]${C_NONE} $*"; }
 err()  { echo -e "${C_RED}[错误]${C_NONE} $*"; }
 info() { echo -e "${C_BLUE}[信息]${C_NONE} $*"; }
@@ -150,6 +153,14 @@ ask_dbpass() {
     TLBB_DB_PASS="${TLBB_DB_PASS:-123456}"
     if [ "$TLBB_NONINTERACTIVE" = "1" ]; then
         [ -n "$TLBB_DB_PASS" ] || die "非交互模式需要提供环境变量 TLBB_DB_PASS"
+        return
+    fi
+    # 检测 stdin 是否为终端 (curl | bash 管道模式下 stdin 不是 tty,
+    # 此时 read 会从管道读到脚本内容, 导致密码被错误赋值)
+    if [ ! -t 0 ]; then
+        warn "检测到非交互模式 (管道/脚本执行), 使用默认密码 ${TLBB_DB_PASS}"
+        warn "如需自定义密码, 请执行: TLBB_DB_PASS=你的密码 bash install.sh"
+        export TLBB_DB_PASS
         return
     fi
     if [ -z "${TLBB_DB_PASS_CONFIRMED:-}" ]; then

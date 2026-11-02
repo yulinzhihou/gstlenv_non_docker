@@ -108,8 +108,20 @@ rhel_install_compat() {
             ;;
         el8|el9|el10)
             local m; m=$(rhel_pkgmgr)
+            # el9: 先启用 CRB 仓库 (32 位兼容库在 CRB 里)
+            [ "$SYS_BRANCH" = "el9" ] && $m config-manager --set-enabled crb >/dev/null 2>&1 || true
+            # 第一批: 完整 32 位兼容库
             $m -y install glibc.i686 libstdc++.i686 libnsl.i686 libcrypt.i686 zlib.i686 gcc glibc-devel.i686 2>/dev/null || \
+            # 第二批: 精简兜底 (部分源缺少 libnsl.i686/libcrypt.i686)
+            $m -y install glibc.i686 libstdc++.i686 zlib.i686 2>/dev/null || \
+            # 第三批: 仅最核心两个 (el9 AppStream 必须有)
             $m -y install glibc.i686 libstdc++.i686 2>/dev/null || warn "32 位库安装不完整, 请检查源"
+            # 验证核心库是否装上
+            if [ -f /usr/lib64/../lib/libc.so.6 ] || ls /lib/libc-*.so >/dev/null 2>&1; then
+                log "32 位核心库 (glibc/libstdc++) 验证通过"
+            else
+                warn "32 位 glibc 未确认安装, 老端可能无法运行"
+            fi
             ;;
     esac
     log "32 位兼容库安装完成"
@@ -575,7 +587,12 @@ FLUSH PRIVILEGES;" 2>/dev/null; }
             mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
         fi
     else
-        warn "未找到离线 SQL 文件, 跳过导入 (可使用 Navicat 手动导入 offline/sql/mysql${mver}/)"
+        warn "未找到离线 SQL 文件, 跳过自动导入"
+        warn "在线模式下请手动导入: 将 tlbbdb.sql / web.sql / tlbbdb_10.sql 上传到服务器后执行:"
+        warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb.sql"
+        warn "  mysql -uroot -p${TLBB_DB_PASS} < web.sql"
+        warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb_10.sql"
+        warn "SQL 文件位置参考: offline/sql/mysql${mver}/ 目录"
     fi
 }
 
@@ -645,8 +662,18 @@ rhel_install_odbc() {
                 fi
             else
                 local m; m=$(rhel_pkgmgr)
-                $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
-                $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败"
+                # 先检测是否已安装, 避免重复安装时的误报警告
+                if command -v isql >/dev/null 2>&1; then
+                    log "unixODBC 64位已存在 (isql 可用), 跳过安装"
+                else
+                    $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
+                fi
+                # 32 位 unixODBC (可选, el9 老端用 64 位驱动为主)
+                if ls /usr/lib/libodbc.so.* >/dev/null 2>&1; then
+                    log "unixODBC 32位库已存在, 跳过安装"
+                else
+                    $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败 (可选, el9+ 端通常不需要)"
+                fi
             fi
             # 32 位驱动复制到 /usr/lib (el8/el9/el10 主要用 64 位驱动, 32 位为可选兼容)
             local drv; drv=$(off_get el8_el9_el10/libmyodbc3-32bit libmyodbc3-3.51.27.so)
