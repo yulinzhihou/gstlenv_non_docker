@@ -149,7 +149,20 @@ ask_mysql_version() {
     echo "  编号2: MySQL 5.7  (改引擎端, CentOS 7/8 + MySQL5.7, 需自己替换SQL)"
     echo "  编号3: MySQL 8.0  (64位源端, CentOS 9/10/Ubuntu20+ + MySQL8.0, 需替换SQL和ini)"
     echo "  直接回车: 按系统自动选择 (auto)"
-    read -e -p "请输入编号 [1|2|3, 回车=auto]: " __mysql_idx
+    # 管道模式 (curl | bash) 下 stdin 是管道, 用 /dev/tty 从终端读取
+    local __read_src
+    if [ -t 0 ]; then
+        __read_src=""
+    elif [ -r /dev/tty ]; then
+        __read_src="< /dev/tty"
+    else
+        # 完全无终端, 用默认 auto
+        warn "非交互模式, MySQL 版本自动选择 (auto)"
+        TLBB_MYSQL_VERSION=auto
+        log "数据库版本: MySQL ${TLBB_MYSQL_VERSION}"
+        return 0
+    fi
+    eval "read -e -p \"请输入编号 [1|2|3, 回车=auto]: \" __mysql_idx $__read_src"
     case "$__mysql_idx" in
         1) TLBB_MYSQL_VERSION=51;;
         2) TLBB_MYSQL_VERSION=57;;

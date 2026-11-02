@@ -155,16 +155,21 @@ ask_dbpass() {
         [ -n "$TLBB_DB_PASS" ] || die "非交互模式需要提供环境变量 TLBB_DB_PASS"
         return
     fi
-    # 检测 stdin 是否为终端 (curl | bash 管道模式下 stdin 不是 tty,
-    # 此时 read 会从管道读到脚本内容, 导致密码被错误赋值)
-    if [ ! -t 0 ]; then
-        warn "检测到非交互模式 (管道/脚本执行), 使用默认密码 ${TLBB_DB_PASS}"
+    # 管道模式 (curl | bash) 下 stdin 是管道, 检测 /dev/tty 是否可用
+    local __read_src
+    if [ -t 0 ]; then
+        __read_src=""
+    elif [ -r /dev/tty ]; then
+        __read_src="< /dev/tty"
+    else
+        # 完全无终端, 用默认密码
+        warn "检测到非交互模式 (无终端), 使用默认密码 ${TLBB_DB_PASS}"
         warn "如需自定义密码, 请执行: TLBB_DB_PASS=你的密码 bash install.sh"
         export TLBB_DB_PASS
         return
     fi
     if [ -z "${TLBB_DB_PASS_CONFIRMED:-}" ]; then
-        read -p "数据库 root/gs 密码 (默认: ${TLBB_DB_PASS}, 直接回车使用默认): " p1
+        eval "read -p \"数据库 root/gs 密码 (默认: ${TLBB_DB_PASS}, 直接回车使用默认): \" p1 $__read_src"
         [ -n "$p1" ] && TLBB_DB_PASS="$p1"
         if [ "${#TLBB_DB_PASS}" -lt 6 ]; then
             warn "密码长度至少 6 位, 使用默认值 ${TLBB_DB_PASS}"

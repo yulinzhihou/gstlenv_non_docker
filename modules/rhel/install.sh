@@ -429,18 +429,12 @@ rhel_handle_first_boot() {
     fi
 
     if [ -z "$tmp_pw" ]; then
-        # 无临时密码(已初始化过): 先尝试无密/空密登录
-        if mysql -uroot -e "SELECT 1;" >/dev/null 2>&1; then
-            log "MySQL 本地无密可登录, 正在设置 root 密码为 ${TLBB_DB_PASS} ..."
-            mysql -uroot -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
-                warn "无密设置密码失败, 将由后续账号配置兜底"
-            return 0
-        fi
-        # 空密码登录
-        if mysql -uroot -p'' -e "SELECT 1;" >/dev/null 2>&1; then
+        # 无临时密码(已初始化过): 先尝试空密码登录
+        # 所有 mysql 命令加 </dev/null, 避免交互式 Enter password: 提示 (输出到 /dev/tty)
+        if mysql -uroot -p'' -e "SELECT 1;" </dev/null >/dev/null 2>&1; then
             log "MySQL 空密码可登录, 正在设置 root 密码为 ${TLBB_DB_PASS} ..."
-            mysql -uroot -p'' -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
-                warn "空密码设置密码失败, 将由后续账号配置兜底"
+            mysql -uroot -p'' -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" </dev/null 2>/dev/null || \
+                warn "空密码设置失败, 将由后续账号配置兜底"
             return 0
         fi
         # 终极兜底: skip-grant-tables 重置 root 密码 (覆盖日志缺失/密码未知场景)
@@ -458,16 +452,16 @@ rhel_handle_first_boot() {
             systemctl start mysqld >/dev/null 2>&1 || systemctl start mysql >/dev/null 2>&1
         fi
         local i=0
-        until mysql -uroot -e "SELECT 1;" >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
-        if mysql -uroot -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" >/dev/null 2>&1; then
+        until mysql -uroot -e "SELECT 1;" </dev/null >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
+        if mysql -uroot -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1; then
             log "skip-grant-tables 重置成功 (方式: $skiptype)"
         else
             warn "skip-grant-tables 重置失败 (老版本可用 SET PASSWORD 方式)"
-            mysql -uroot -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" >/dev/null 2>&1
+            mysql -uroot -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1
         fi
         # 恢复正常启动 (去掉 skip-grant 配置)
         if [ "$skiptype" = "safe" ]; then
-            mysqladmin -uroot -p"${TLBB_DB_PASS}" shutdown >/dev/null 2>&1 || pkill -9 mysqld_safe 2>/dev/null
+            mysqladmin -uroot -p"${TLBB_DB_PASS}" shutdown </dev/null >/dev/null 2>&1 || pkill -9 mysqld_safe 2>/dev/null
         else
             systemctl stop mysqld >/dev/null 2>&1 || systemctl stop mysql >/dev/null 2>&1
             rm -f /etc/my.cnf.d/zz-skip-grant.cnf
@@ -477,7 +471,7 @@ rhel_handle_first_boot() {
             systemctl start mysql >/dev/null 2>&1
         # 等待就绪
         i=0
-        until mysqladmin -uroot -p"${TLBB_DB_PASS}" ping >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
+        until mysqladmin -uroot -p"${TLBB_DB_PASS}" ping </dev/null >/dev/null 2>&1 || [ $i -ge 20 ]; do sleep 1; i=$((i + 1)); done
         log "MySQL 已用 ${TLBB_DB_PASS} 重启就绪"
         return 0
     fi
@@ -485,13 +479,13 @@ rhel_handle_first_boot() {
     # 8.0/5.7: 临时密码默认过期, 且受 validate_password 策略约束 (123456 不满足 MEDIUM)
     # 两段式: ①先用满足策略的强密码重置(首条语句必须 ALTER USER) ②登录强密码→卸载组件→改回弱密码
     local strong="Gstest@${TLBB_DB_PASS}"
-    mysql -uroot -p"$tmp_pw" --connect-expired-password \
+    mysql -uroot -p"$tmp_pw" --connect-expired-password </dev/null \
         -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '$strong';" 2>/dev/null && \
-    mysql -uroot -p"$strong" \
+    mysql -uroot -p"$strong" </dev/null \
         -e "UNINSTALL COMPONENT 'file://component_validate_password' 2>/dev/null; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
-    mysql -uroot -p"$tmp_pw" --connect-expired-password \
+    mysql -uroot -p"$tmp_pw" --connect-expired-password </dev/null \
         -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
-    mysql -uroot -p"$tmp_pw" \
+    mysql -uroot -p"$tmp_pw" </dev/null \
         -e "SET PASSWORD = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" 2>/dev/null || \
         { warn "临时密码重置失败, 请手动检查 MySQL 日志"; }
 }
