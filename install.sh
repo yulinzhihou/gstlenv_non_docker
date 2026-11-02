@@ -143,12 +143,63 @@ EOF
 ask_mysql_version() {
     [ "$TLBB_NONINTERACTIVE" = "1" ] && return 0
     [ -n "$TLBB_MYSQL_VERSION" ] && [ "$TLBB_MYSQL_VERSION" != "auto" ] && return 0
+
+    # 根据当前系统动态计算可选的 MySQL 版本列表
+    # 返回: 用空格分隔的版本号列表, 如 "51 57 80"
+    get_available_mysql_versions() {
+        case "$SYS_FAMILY:$SYS_BRANCH" in
+            rhel:el5|rhel:el6)  echo "51";;
+            rhel:el7)           echo "51 57";;
+            rhel:el8)           echo "57 80";;
+            rhel:el9|rhel:el10) echo "57 80";;
+            debian:ubuntu)
+                case "$SYS_VERSION_ID" in
+                    12*|13*|14*|15*|16*) echo "51 57";;
+                    18*)                echo "57 80";;
+                    *)                  echo "80";;
+                esac;;
+            debian:debian)      echo "80";;
+            *)                  echo "57 80";;
+        esac
+    }
+
+    # 获取系统默认推荐版本
+    get_recommended_mysql_version() {
+        select_mysql_version
+    }
+
+    local avail_list rec_ver
+    avail_list=$(get_available_mysql_versions)
+    rec_ver=$(get_recommended_mysql_version)
+
+    local sys_desc="${SYS_PRETTY:-${SYS_ID} ${SYS_BRANCH}}"
+
     echo ""
-    echo "  ※※※ 数据库版本选择 (对齐 gstlenv 环境编号) ※※※"
-    echo "  编号1: MySQL 5.1  (老端标准, CentOS 6/7 + MySQL5.1, 默认)"
-    echo "  编号2: MySQL 5.7  (改引擎端, CentOS 7/8 + MySQL5.7, 需自己替换SQL)"
-    echo "  编号3: MySQL 8.0  (64位源端, CentOS 9/10/Ubuntu20+ + MySQL8.0, 需替换SQL和ini)"
-    echo "  直接回车: 按系统自动选择 (auto)"
+    echo "  ※※※ 数据库版本选择 ※※※"
+    echo "  当前系统: ${sys_desc}"
+    echo "  ------------------------------------------------"
+
+    # 动态列出可选版本
+    local idx=1
+    local ver_num ver_desc
+    for ver_num in $avail_list; do
+        case "$ver_num" in
+            51) ver_desc="MySQL 5.1  (老端标准, 怀旧/经典端兼容)";;
+            57) ver_desc="MySQL 5.7  (改引擎端, 兼容性好)";;
+            80) ver_desc="MySQL 8.0  (新端标准, 性能更好)";;
+        esac
+        # 标记推荐版本
+        if [ "$ver_num" = "$rec_ver" ]; then
+            echo "  编号${idx}: ${ver_desc}  ${CGREEN}(推荐)${CEND}"
+        else
+            echo "  编号${idx}: ${ver_desc}"
+        fi
+        idx=$((idx + 1))
+    done
+
+    echo "  直接回车: 使用推荐版本 (MySQL ${rec_ver})"
+    echo "  ------------------------------------------------"
+
     # 管道模式 (curl | bash) 下 stdin 是管道, 用 /dev/tty 从终端读取
     local __read_src
     if [ -t 0 ]; then
@@ -156,20 +207,34 @@ ask_mysql_version() {
     elif [ -r /dev/tty ]; then
         __read_src="< /dev/tty"
     else
-        # 完全无终端, 用默认 auto
-        warn "非交互模式, MySQL 版本自动选择 (auto)"
-        TLBB_MYSQL_VERSION=auto
+        # 完全无终端, 用推荐版本
+        warn "非交互模式, 使用推荐 MySQL ${rec_ver}"
+        TLBB_MYSQL_VERSION="$rec_ver"
         log "数据库版本: MySQL ${TLBB_MYSQL_VERSION}"
         return 0
     fi
-    eval "read -e -p \"请输入编号 [1|2|3, 回车=auto]: \" __mysql_idx $__read_src"
-    case "$__mysql_idx" in
-        1) TLBB_MYSQL_VERSION=51;;
-        2) TLBB_MYSQL_VERSION=57;;
-        3) TLBB_MYSQL_VERSION=80;;
-        *) TLBB_MYSQL_VERSION=auto;;
-    esac
-    log "数据库版本: MySQL ${TLBB_MYSQL_VERSION}"
+
+    eval "read -e -p \"请输入编号 [1-$((idx-1)), 回车=推荐]: \" __mysql_idx $__read_src"
+
+    # 根据用户输入的编号, 映射到版本号
+    local selected_ver=""
+    local cur_idx=1
+    for ver_num in $avail_list; do
+        if [ "$cur_idx" = "$__mysql_idx" ]; then
+            selected_ver="$ver_num"
+            break
+        fi
+        cur_idx=$((cur_idx + 1))
+    done
+
+    if [ -n "$selected_ver" ]; then
+        TLBB_MYSQL_VERSION="$selected_ver"
+    else
+        TLBB_MYSQL_VERSION="$rec_ver"
+        warn "输入无效, 使用推荐版本 MySQL ${rec_ver}"
+    fi
+
+    log "数据库版本: MySQL ${TLBB_MYSQL_VERSION} (${sys_desc})"
 }
 
 # ---------- 部署全局管理命令 (参考 gstlenv set_command, 只部署 gs 原命令名) ----------
