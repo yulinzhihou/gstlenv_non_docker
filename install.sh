@@ -51,7 +51,10 @@ done
 gen_env() {
     local env_dir=/root/.gs
     mkdir -p "$env_dir" /tlgame /tlgame/backup /tlgame/www/ow /tlgame/www/gm /tlgame/conf.d /tlgame/billing /root/.tlgame 2>/dev/null
-    local mver; mver=$(select_mysql_version)
+    local mver dbpass_shell redispass_shell
+    mver=$(select_mysql_version)
+    printf -v dbpass_shell '%q' "$TLBB_DB_PASS"
+    printf -v redispass_shell '%q' "$TLBB_REDIS_PASSWORD"
     cat > "$env_dir/.env" <<EOF
 # TLBB 原生环境配置 (由 install.sh 生成, 变量名/默认值对齐 gstlenv env.sample)
 VERSION="v2.8.28"
@@ -114,9 +117,9 @@ WEB_GM_PORT=61888
 # MYSQL 用户
 TL_MYSQL_USER="gs"
 
-# MYSQL root密码 (加双引号, 避免密码含空格/特殊字符时导致 source 报错)
+# MYSQL root密码 (使用 Bash 字面量转义, 避免 source 误解释特殊字符)
 TL_MYSQL_DEFAULT_PASSWORD="123456"
-TL_MYSQL_PASSWORD="${TLBB_DB_PASS}"
+TL_MYSQL_PASSWORD=${dbpass_shell}
 
 # TL服务端在宿主主机路径 (原生: /tlgame/tlbb, 与 gstlenv 一致)
 TLBB_PATH="/tlgame/tlbb"
@@ -138,12 +141,13 @@ LOGIN_DEFAULT_PASSWORD="gsgameshare.com"
 LOGIN_PASSWORD="gsgameshare.com"
 PRIVATE_DEFAULT_KEY="Gsgameshare.com2025"
 PRIVATE_KEY="Gsgameshare.com2025"
-REDIS_PASSWORD="gsgameshare.com"
+REDIS_PASSWORD=${redispass_shell}
 REDIS_DEFAULT_PASSWORD="gsgameshare.com"
 
 # 原生新增: MySQL 档位 (对齐 gstlenv 环境编号: 1=CS6+5.1 2=CS7+5.1 3=CS7+5.7 4=CS9+8.0)
 TLBB_MYSQL_VERSION="${mver}"
 TLBB_MYSQL_USER="${TLBB_MYSQL_USER}"
+TLBB_DB_LAYOUT="${TLBB_DB_LAYOUT:-2}"
 EOF
     chmod 600 "$env_dir/.env"
     log "运行环境文件已生成: $env_dir/.env (对齐 gstlenv env.sample)"
@@ -238,6 +242,7 @@ ask_mysql_version() {
         fi
         cur_idx=$((cur_idx + 1))
     done
+    [ -n "$__mysql_idx" ] || selected_ver="$rec_ver"
 
     if [ -n "$selected_ver" ]; then
         TLBB_MYSQL_VERSION="$selected_ver"
@@ -285,14 +290,22 @@ finish_banner() {
     command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1 || not_installed="$not_installed redis"
     echo ""
     echo "=============================================================="
-    echo "  TLBB 原生环境安装完成"
+    if [ "${TLBB_OPTIONAL_FAILED:-0}" = "1" ]; then
+        echo "  TLBB 基础环境已配置, 部分可选组件失败 (见上方日志)"
+    else
+        echo "  TLBB 原生环境安装完成"
+    fi
     echo "--------------------------------------------------------------"
     echo "  数据库 : MySQL ${mver}  (root 本地/远程均已设置密码)"
     echo "  MySQL 账号 (本地+远程均可登录):"
     echo "    root : root@localhost / ${TLBB_DB_PASS}"
     echo "    root : root@'%'        / ${TLBB_DB_PASS}   (远程登录)"
     echo "    gs   : gs@'%'          / ${TLBB_MYSQL_PASSWORD}   (游戏/服务端专用, 远程登录)"
-    echo "  库     : tlbbdb, web"
+    if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "${TLBB_DB_LAYOUT:-3}" = "3" ]; then
+        echo "  库     : tlbbdb_main, tlbbdb_10, web"
+    else
+        echo "  库     : tlbbdb, web"
+    fi
     echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
     echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
     echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar"
@@ -427,6 +440,7 @@ main() {
     gen_env
     install_cmd
     finish_banner
+    [ "${TLBB_OPTIONAL_FAILED:-0}" != "1" ]
 }
 
 main "$@"

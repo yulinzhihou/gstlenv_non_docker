@@ -177,7 +177,12 @@ if [ -d "${ENV_DIR}/offline" ] && find "${ENV_DIR}/offline" -mindepth 1 -maxdept
         *) auto_offline="--offline"; echo -e "${CGREEN}检测到离线组件, 自动以离线模式安装 (如需在线请加 --online)${CEND}" ;;
     esac
 fi
-bash install.sh $auto_offline "$@" | tee -a /root/.tlgame/install.log
+bash install.sh $auto_offline "$@" 2>&1 | tee -a /root/.tlgame/install.log
+install_status=${PIPESTATUS[0]}
+if [ "$install_status" -ne 0 ]; then
+    echo -e "${CRED}安装未完成 (退出码 ${install_status}), 日志: /root/.tlgame/install.log${CEND}"
+    exit "$install_status"
+fi
 
 echo -e "${CPURPLE}==============================================================${CEND}"
 echo -e "${CCYAN}  GS游享网 · 天龙八部万能环境 安装流程结束${CEND}"

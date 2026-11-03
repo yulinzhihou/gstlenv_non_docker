@@ -57,6 +57,11 @@
 
 ## 快速入门
 
+CentOS Stream 10 在线安装及 MySQL 登录/建库/导入问题的修复与复测步骤见
+[2026-11-03 Linux 在线安装修复](docs/linux-online-repair-20261103.md)。
+在线安装包现包含 `sql/` 初始数据库文件，不需要为了导入 SQL 下载完整离线 RPM 包；
+补装组件时会保留已有表和数据。
+
 ### 视频教程（小白新手快速从 0 到 1，教程为 Docker 版，原生版操作步骤相同，仅环境安装方式不同）
 - [第一课：服务器环境安装（虚拟机+云主机）](https://www.bilibili.com/video/BV1oN411y7r7/)
 - [第二课：本机运行环境的准备工作](https://www.bilibili.com/video/BV1Jh411c7ud/)

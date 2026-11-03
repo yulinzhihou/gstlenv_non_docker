@@ -231,11 +231,14 @@ ask_optional_component() {
     fi
     echo -e "${CGREEN}可选组件: ${comp}${CEND}" >&2
     echo "  ${desc}" >&2
-    eval "read -e -p \"是否安装 ${comp}? [y/N, 回车=不安装] \" ans $__read_src"
-    case "$ans" in
-        y|Y|yes|YES|Yes) echo "1";;
-        *) echo "0";;
-    esac
+    while :; do
+        eval "read -r -e -p \"是否安装 ${comp}? [y/N, 回车=不安装] \" ans $__read_src" || { echo "0"; return 0; }
+        case "$ans" in
+            y|Y|yes|YES|Yes) echo "1"; return 0;;
+            ""|n|N|no|NO|No) echo "0"; return 0;;
+            *) warn "输入无效, 请输入 y 或 n" >&2;;
+        esac
+    done
 }
 
 # ---------- 数据库结构选择 (MySQL 8.0/8.4: 3库 新端 / 2库 怀旧端) ----------
