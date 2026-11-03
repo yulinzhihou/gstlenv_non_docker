@@ -6,6 +6,7 @@ baseurl=https://mirrors.huaweicloud.com/centos-stream/9-stream/BaseOS/$basearch/
         https://mirrors.cloud.tencent.com/centos-stream/9-stream/BaseOS/$basearch/os/
         https://mirrors.ustc.edu.cn/centos-stream/9-stream/BaseOS/$basearch/os/
         https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/BaseOS/$basearch/os/
+        https://mirror.stream.centos.org/9-stream/BaseOS/$basearch/os/
 gpgcheck=0
 enabled=1
 
@@ -16,18 +17,17 @@ baseurl=https://mirrors.huaweicloud.com/centos-stream/9-stream/AppStream/$basear
         https://mirrors.cloud.tencent.com/centos-stream/9-stream/AppStream/$basearch/os/
         https://mirrors.ustc.edu.cn/centos-stream/9-stream/AppStream/$basearch/os/
         https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/AppStream/$basearch/os/
+        https://mirror.stream.centos.org/9-stream/AppStream/$basearch/os/
 gpgcheck=0
 enabled=1
 
 [extras]
 name=CentOS-Stream-9 - Extras
-baseurl=https://mirrors.huaweicloud.com/centos-stream/9-stream/extras/$basearch/os/
-        https://mirrors.aliyun.com/centos-stream/9-stream/extras/$basearch/os/
-        https://mirrors.cloud.tencent.com/centos-stream/9-stream/extras/$basearch/os/
-        https://mirrors.ustc.edu.cn/centos-stream/9-stream/extras/$basearch/os/
-        https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/extras/$basearch/os/
+baseurl=https://mirrors.aliyun.com/centos-stream/SIGs/9-stream/extras/$basearch/extras-common/
+        https://mirror.stream.centos.org/SIGs/9-stream/extras/$basearch/extras-common/
 gpgcheck=0
 enabled=1
+skip_if_unavailable=1
 
 [crb]
 name=CentOS-Stream-9 - CRB
@@ -36,5 +36,6 @@ baseurl=https://mirrors.huaweicloud.com/centos-stream/9-stream/CRB/$basearch/os/
         https://mirrors.cloud.tencent.com/centos-stream/9-stream/CRB/$basearch/os/
         https://mirrors.ustc.edu.cn/centos-stream/9-stream/CRB/$basearch/os/
         https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/CRB/$basearch/os/
+        https://mirror.stream.centos.org/9-stream/CRB/$basearch/os/
 gpgcheck=0
 enabled=1

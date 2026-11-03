@@ -84,10 +84,12 @@ curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main
 >
 > 可选参数：
 > - 指定数据库密码：`... | bash -s -- --dbpass 你的密码`
-> - 强制在线模式（配置国内源 repo 安装）：`... | bash -s -- --online`
-> - 离线模式（无网络）：把离线组件附件（`offline-*.tar.gz` / `tlbb离线组件*.zip`）放到 `/root` 下，
->   一条命令自动解压到 `/root/.tlgame/offline/` 并自动以离线模式安装；需强制在线可加 `--online`：
->   `... | bash`（检测到离线包自动 `--offline`）或显式 `... | bash -s -- --offline`
+> - 一键引导默认在线（配置国内源 repo 安装），也可明确指定：`... | bash -s -- --online`。
+>   `/root` 下遗留离线包或已有 `offline/` 不会触发离线模式。
+> - 离线组件模式：把离线组件附件（`offline-*.tar.gz` / `tlbb离线组件*.zip`）放到 `/root` 下，
+>   显式执行 `... | bash -s -- --offline` 才会自动解压并使用离线组件。
+>   引导下载源码仍需网络；完全离线时请上传完整源码与离线组件后运行 `bash install.sh --offline`。
+> - 引导支持 `TLBB_OFFLINE_MODE=0|1`；命令行模式参数优先，多个模式参数以最后一个为准。
 > - 预置可选组件（默认安装完 MySQL 后交互询问，**提示 `[y/N, 回车=不安装]`，默认 N 不装**）：`TLBB_OPT_NGINX=1 TLBB_OPT_PHP=1 TLBB_OPT_REDIS=1 bash install.sh`
 > - 预置数据库结构（8.0+ 交互询问 3库/2库）：`TLBB_DB_LAYOUT=3|2 bash install.sh`
 

@@ -36,8 +36,8 @@ rhel_pkg_install() {
 
 # ---------- 切换国内源镜像 (各镜像路径结构一致, 仅替换域名) ----------
 rhel_switch_repo_mirror() {
-    # el10 already has independent fallback URLs, including the Extras SIG path.
-    [ "$SYS_BRANCH" = "el10" ] && return 1
+    # Stream 9/10 already have independent fallback URLs and an Extras SIG path.
+    case "$SYS_ID:$SYS_BRANCH" in centos:el9|centos:el10) return 1;; esac
     # $1: tencent|huawei|tuna|ustc (aliyun 为默认首选, 不参与切换)
     local mir="$1" dom=""
     case "$mir" in
@@ -55,7 +55,7 @@ rhel_switch_repo_mirror() {
 # ---------- 配置国内 yum/dnf 源 ----------
 rhel_config_repo() {
     # 离线模式: 跳过源配置, 直接使用本地安装包 (传 force 则无视离线标志强制配置, 用于离线缺失时的在线回退)
-    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "$1" != "force" ]; then
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "${1:-}" != "force" ]; then
         log "离线模式: 跳过 yum/dnf 源配置, 使用本地 rpm 安装包"; return 0
     fi
     local repofile=""
@@ -344,10 +344,14 @@ rhel_download_mysql_rpm() {
     [ "$ok" = "0" ] && return 1
     # Let the solver install one coherent transaction, including OS dependencies.
     # Never force a partially installed server through --nodeps.
-    local mgr; mgr=$(rhel_pkgmgr)
+    local mgr logfile="${TLBB_PKG_LOG:-/var/log/tlbb-packages.log}"
+    mgr=$(rhel_pkgmgr)
     $mgr --disablerepo="mysql*" localinstall -y "$tmpd"/*.rpm \
-        >>"${TLBB_PKG_LOG:-/var/log/tlbb-packages.log}" 2>&1 || \
-        { warn "rpm 本地依赖安装失败, 详情: ${TLBB_PKG_LOG:-/var/log/tlbb-packages.log}"; return 1; }
+        >>"$logfile" 2>&1 || {
+            warn "rpm 本地依赖安装失败, 详情: $logfile" >&2
+            tail -n 20 "$logfile" >&2
+            return 1
+        }
     log "MySQL ${ver} rpm 直下完成: ${cnt} 个最新版 rpm (server/client/libs/common, 共 $((total_mb/1024)) MB)"
     return 0
 }
@@ -434,7 +438,7 @@ rhel_install_db() {
         warn "提示: 联网机器上 'bash scripts/pack_offline.sh --full <branch>' 补齐后放入该目录"
         # 离线包缺失时尝试 curl 直下官方源兜底 (部分服务器仅 repo.mysql.com 可达)
         warn "尝试 curl 直下 MySQL ${mver} 官方源兜底..."
-        if rhel_download_mysql_rpm "$mver" "${SYS_BRANCH#el}" 2>/dev/null; then
+        if rhel_download_mysql_rpm "$mver" "${SYS_BRANCH#el}"; then
             log "MySQL ${mver} 官方源直下兜底安装完成"
             return 0
         fi
@@ -487,7 +491,7 @@ rhel_install_db() {
             fi
             ;;
         80)
-            log "安装 MySQL 8.0 (官方源)..."
+            log "安装 MySQL 8.0..."
             local rel8; rel8="${SYS_BRANCH#el}"
             # el10: 官方 8.0 无 el10 包, 自动改用 MySQL 8.4 (LTS) 安装
             if [ "$rel8" = "10" ]; then
@@ -496,11 +500,9 @@ rhel_install_db() {
                     rhel_download_mysql_rpm 84 "$rel8" || \
                     rhel_fallback_offline_rpm || die "MySQL 8.4 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
                 fi
-            # el9 (CentOS Stream 9 / RHEL9+ / Rocky/Alma 9): 系统 AppStream 自带 MySQL 8.0 包,
-            # 官方源 el9 目录结构已变更易 404, 优先走系统源 (实测 CentOS Stream 9 mysql-server=8.0.46)
-            # 离线模式网络可用时也强制配置国内源走系统源 (避免直下兜底引入旧版/混装)
+            # el9: 优先系统 AppStream mysql-server, 使用同发行版的依赖组合。
+            # 系统源安装失败后才尝试 MySQL Community 源与直下兜底。
             elif [ "$rel8" -ge 9 ] 2>/dev/null; then
-                [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && rhel_config_repo force >/dev/null 2>&1
                 if rhel_pkg_install mysql-server; then
                     log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
                 elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
@@ -529,9 +531,12 @@ rhel_install_db() {
     # 装完数据库后禁用 MySQL 官方源: 指纹分流/失效环境会让该源持续 404,
     # 拖累后续所有 dnf 操作 (unixODBC/其他组件安装失败)
     if [ "$mver" != "51" ]; then
-        dnf config-manager --set-disabled "mysql*" >/dev/null 2>&1 || \
-            sed -i 's/^enabled=1/enabled=0/' /etc/yum.repos.d/mysql*.repo >/dev/null 2>&1
-        log "MySQL 官方源已禁用 (避免失效源拖累后续安装)"
+        local mysqlrepo
+        for mysqlrepo in /etc/yum.repos.d/mysql*.repo; do
+            [ -f "$mysqlrepo" ] || continue
+            sed -i 's/^enabled=1/enabled=0/' "$mysqlrepo" || return 1
+            log "MySQL 官方源已禁用: $mysqlrepo (避免失效源拖累后续安装)"
+        done
     fi
 }
 

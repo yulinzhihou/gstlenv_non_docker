@@ -23,6 +23,25 @@ assert_equal() {
     fi
 }
 
+(
+    SYS_ID=centos
+    SYS_BRANCH=el9
+    TLBB_MYSQL_VERSION=80
+    TLBB_OFFLINE_MODE=0
+    rhel_pkg_install() { printf '%s\n' "$*" >> "$WORK/el9-packages"; }
+    rhel_config_mysql_repo() { echo 'FAIL: EL9 must try AppStream first' >&2; exit 1; }
+    dnf() { :; }
+    sed() { :; }
+    rhel_install_db
+    assert_equal "$(<"$WORK/el9-packages")" mysql-server 'EL9 online AppStream package'
+    if rhel_switch_repo_mirror huawei; then
+        echo 'FAIL: EL9 fallback URLs must not be collapsed to one domain' >&2; exit 1
+    fi
+    TLBB_OFFLINE_MODE=1
+    rhel_config_repo
+)
+printf 'PASS: EL9 online AppStream route and mirror list preservation\n'
+
 assert_equal "$(rhel_main_database)" tlbbdb_main '8.4 three databases'
 TLBB_DB_LAYOUT=2
 assert_equal "$(rhel_main_database)" tlbbdb '8.4 two databases'

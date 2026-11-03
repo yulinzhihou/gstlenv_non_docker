@@ -411,7 +411,7 @@ main() {
 
     detect_net
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        log "运行模式: [离线] 无网络, 使用本地 rpm/deb 命令安装组件"
+        log "运行模式: [离线] 使用本地 rpm/deb 命令安装组件"
         check_offline_complete
     else
         log "运行模式: [在线] 配置国内源, 使用 repo 安装组件"

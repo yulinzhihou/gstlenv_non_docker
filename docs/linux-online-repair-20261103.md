@@ -3,6 +3,9 @@
 适用本次反馈中的 CentOS Stream 10 / MySQL 8.4。修复保留现有数据库，
 不会因启动或认证失败自动卸载 MySQL、移动数据目录或绕过授权表。
 
+CentOS Stream 9 的默认在线模式与 Extras 源追加修复见
+[CentOS 9 在线安装修复](centos9-online-repair-20261103.md)。
+
 ## 已确认的原因
 
 - CentOS 10 Extras 原地址不存在。正确地址使用

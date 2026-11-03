@@ -16,10 +16,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --online
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --dbpass mypass
-# 离线安装(无网络, 把离线组件附件放到 /root 下, 自动解压并自动以 --offline 运行):
-#   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
+# 离线组件安装(引导下载源码仍需网络, 完全离线请上传完整源码后运行 install.sh):
+#   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --offline
 #   自动识别 /root/offline-*.tar.gz /root/tlbb离线组件*.zip 并解压到 /root/.tlgame/offline/
-#   除非显式传 --online, 否则检测到离线组件后自动以离线模式安装
+#   默认在线; 只有 --offline 或 TLBB_OFFLINE_MODE=1 才使用离线组件, 命令行优先
 # ------------------------------------------------------------
 # 流程: 检测root -> 展示广告 -> 下载仓库源码 -> 部署到 /root/.tlgame
 #       -> 执行 install.sh (透传参数)
@@ -29,13 +29,6 @@ export LC_ALL=C
 
 # ---------- 颜色 ----------
 CRED='\033[31m'; CGREEN='\033[32m'; CYELLOW='\033[33m'; CBLUE='\033[34m'; CPURPLE='\033[35m'; CCYAN='\033[36m'; CEND='\033[0m'
-
-# ---------- 检测 root ----------
-[ "$(id -u)" != "0" ] && {
-    echo -e "${CRED}错误: 在线安装必须使用 ROOT 用户执行!${CEND}"
-    echo -e "${CYELLOW}请先执行: sudo su - 切换到 root 后再运行${CEND}"
-    exit 1
-}
 
 # ---------- 展示广告 ----------
 brand_banner() {
@@ -112,31 +105,60 @@ deploy() {
     echo -e "${CGREEN}源码已部署: ${ENV_DIR}${CEND}"
 }
 
-# ---------- 检查离线组件(可选) ----------
+# ---------- 模式由用户选择, 不由遗留文件决定 ----------
+select_install_mode() {
+    GSENV_OFFLINE_MODE="${TLBB_OFFLINE_MODE:-0}"
+    GSENV_OFFLINE_DIR="${TLBB_OFFLINE_DIR:-${ENV_DIR}/offline}"
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --online) GSENV_OFFLINE_MODE=0; shift;;
+            --offline) GSENV_OFFLINE_MODE=1; shift;;
+            --dbpass|--offline-dir)
+                [ $# -ge 2 ] || { echo "错误: $1 缺少参数" >&2; return 2; }
+                [ "$1" != "--offline-dir" ] || GSENV_OFFLINE_DIR="$2"
+                shift 2;;
+            *) shift;;
+        esac
+    done
+    case "$GSENV_OFFLINE_MODE" in
+        0|1) :;;
+        *) echo "错误: TLBB_OFFLINE_MODE 只支持 0 (在线) 或 1 (离线)" >&2; return 2;;
+    esac
+}
+
+find_offline_archive() {
+    local pack
+    for pack in /root/tlbb离线组件*.zip /root/tlbb离线组件*.tar.gz /root/offline*.tar.gz /root/*-offline.tar.gz; do
+        [ -f "$pack" ] || continue
+        printf '%s\n' "$pack"
+        return 0
+    done
+}
+
+# ---------- 仅显式离线模式检查/解压组件 ----------
 check_offline() {
-    # 若 /root 下存在离线组件压缩包 (offline-*.tar.gz / tlbb离线组件*.zip 等),
-    # 自动解压到 ${ENV_DIR}/offline/ 并提示将自动启用离线模式
-    local packs=$(ls /root/tlbb离线组件*.zip /root/tlbb离线组件*.tar.gz /root/offline*.tar.gz /root/*-offline.tar.gz 2>/dev/null | head -1)
+    local offline_dir="$GSENV_OFFLINE_DIR" packs
+    packs=$(find_offline_archive)
     if [ -n "$packs" ]; then
         echo -e "${CYELLOW}检测到离线组件包: ${packs}${CEND}"
         # 已解压且非空则跳过
-        if [ -d "${ENV_DIR}/offline" ] && find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
-            echo -e "${CGREEN}离线组件已就绪: ${ENV_DIR}/offline/${CEND}"
+        if [ -d "$offline_dir" ] && find "$offline_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+            echo -e "${CGREEN}离线组件已就绪: ${offline_dir}/${CEND}"
             return 0
         fi
-        echo -e "${CYELLOW}自动解压离线组件包到 ${ENV_DIR}/offline/ ...${CEND}"
-        mkdir -p "${ENV_DIR}/offline"
+        echo -e "${CYELLOW}自动解压离线组件包到 ${offline_dir}/ ...${CEND}"
+        mkdir -p "$offline_dir" || return 1
         case "$packs" in
             *.tar.gz|*.tgz)
-                tar zxf "$packs" -C "${ENV_DIR}/offline/" 2>/dev/null || \
+                tar zxf "$packs" -C "$offline_dir" 2>/dev/null || \
                     { echo -e "${CRED}解压失败: $packs (请手动解压后重试)${CEND}"; return 1; } ;;
             *.zip)
                 if command -v unzip >/dev/null 2>&1; then
-                    unzip -q -o "$packs" -d "${ENV_DIR}/offline/" 2>/dev/null || \
+                    unzip -q -o "$packs" -d "$offline_dir" 2>/dev/null || \
                         { echo -e "${CRED}解压失败: $packs (请手动解压后重试)${CEND}"; return 1; }
                 else
                     echo -e "${CRED}未安装 unzip, 无法自动解压 ${packs}${CEND}"
-                    echo -e "${CYELLOW}请手动: cd ${ENV_DIR} && unzip ${packs} -d offline/${CEND}"
+                    echo -e "${CYELLOW}请手动解压到: ${offline_dir}/${CEND}"
                     return 1
                 fi ;;
             *)
@@ -144,46 +166,59 @@ check_offline() {
                 return 1 ;;
         esac
         # 兼容包内带 offline/ 顶层目录的情况
-        if [ -d "${ENV_DIR}/offline/offline" ]; then
-            mv "${ENV_DIR}/offline/offline"/* "${ENV_DIR}/offline/" 2>/dev/null
-            rmdir "${ENV_DIR}/offline/offline" 2>/dev/null || true
+        if [ -d "${offline_dir}/offline" ]; then
+            mv "${offline_dir}/offline"/* "${offline_dir}/" 2>/dev/null
+            rmdir "${offline_dir}/offline" 2>/dev/null || true
         fi
-        if find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
-            echo -e "${CGREEN}离线组件已就绪: ${ENV_DIR}/offline/ (将自动以 --offline 模式安装)${CEND}"
+        if find "$offline_dir" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+            echo -e "${CGREEN}离线组件已就绪: ${offline_dir}/${CEND}"
         else
             echo -e "${CRED}解压后 offline/ 为空, 请检查离线包内容${CEND}"
+            return 1
         fi
     fi
+    return 0
 }
 
 # ============================================================
 # 主流程
 # ============================================================
-brand_banner
-download
-deploy
-check_offline
+gsenv_main() {
+    if [ "$(id -u)" != "0" ]; then
+        echo -e "${CRED}错误: 在线安装必须使用 ROOT 用户执行!${CEND}"
+        echo -e "${CYELLOW}请先执行: sudo su - 切换到 root 后再运行${CEND}"
+        return 1
+    fi
+    select_install_mode "$@" || return $?
+    brand_banner
+    download
+    deploy
+    cd "${ENV_DIR}" || return 1
 
-echo -e "${CGREEN}开始执行环境安装 (install.sh), 请耐心等待...${CEND}"
-echo -e "${CYELLOW}提示: 如需指定数据库密码, 可先执行: bash ${ENV_DIR}/install.sh --dbpass 你的密码${CEND}"
-cd "${ENV_DIR}" || exit 1
+    local mode_arg=--online
+    if [ "$GSENV_OFFLINE_MODE" = "1" ]; then
+        mode_arg=--offline
+        check_offline || return 1
+        echo -e "${CGREEN}安装模式: [离线] (用户指定)${CEND}"
+    else
+        echo -e "${CGREEN}安装模式: [在线] (不自动解压或启用 /root 下的离线包)${CEND}"
+    fi
 
-# 透传参数 (--online / --offline / --dbpass xxx / 环境变量)
-# 检测到 offline/ 已就绪且用户未显式指定 --online 时, 自动追加 --offline
-auto_offline=""
-if [ -d "${ENV_DIR}/offline" ] && find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
-    case " $* " in
-        *" --online "*) : ;;   # 用户显式要求在线, 不覆盖
-        *) auto_offline="--offline"; echo -e "${CGREEN}检测到离线组件, 自动以离线模式安装 (如需在线请加 --online)${CEND}" ;;
-    esac
+    echo -e "${CGREEN}开始执行环境安装 (install.sh), 请耐心等待...${CEND}"
+    echo -e "${CYELLOW}提示: 如需指定数据库密码, 使用 --dbpass 参数${CEND}"
+    bash install.sh "$mode_arg" "$@" 2>&1 | tee -a "${ENV_DIR}/install.log"
+    local install_status=${PIPESTATUS[0]}
+    if [ "$install_status" -ne 0 ]; then
+        echo -e "${CRED}安装未完成 (退出码 ${install_status}), 日志: ${ENV_DIR}/install.log${CEND}"
+        return "$install_status"
+    fi
+
+    echo -e "${CPURPLE}==============================================================${CEND}"
+    echo -e "${CCYAN}  GS游享网 · 天龙八部万能环境 安装流程结束${CEND}"
+    echo -e "${CPURPLE}==============================================================${CEND}"
+}
+
+# BASH_SOURCE is empty when invoked through curl | bash.
+if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
+    gsenv_main "$@"
 fi
-bash install.sh $auto_offline "$@" 2>&1 | tee -a /root/.tlgame/install.log
-install_status=${PIPESTATUS[0]}
-if [ "$install_status" -ne 0 ]; then
-    echo -e "${CRED}安装未完成 (退出码 ${install_status}), 日志: /root/.tlgame/install.log${CEND}"
-    exit "$install_status"
-fi
-
-echo -e "${CPURPLE}==============================================================${CEND}"
-echo -e "${CCYAN}  GS游享网 · 天龙八部万能环境 安装流程结束${CEND}"
-echo -e "${CPURPLE}==============================================================${CEND}"
