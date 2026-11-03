@@ -273,12 +273,12 @@ FLUSH PRIVILEGES;" 2>/dev/null || warn "MySQL 5.7 账号配置失败"
             ;;
     esac
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
-        log "导入初始数据 (${dblayout} 库结构, 主库 ${main_db})..."
+        log "导入初始数据 (${dblayout} 库结构, 主库 ${main_db}, 目标库已先建好并显式指定导入)..."
         if [ "$main_db" = "tlbbdb" ]; then
-            mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败"
+            mysql -uroot -p"${TLBB_DB_PASS}" "$main_db" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败"
         else
             # 3 库模式: 主库物理名为 tlbbdb_main, 改写 tlbbdb.sql 的 CREATE DATABASE/USE 头后导入
-            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败"
+            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" "$main_db" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败"
         fi
         mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
         if [ "$need_t10" = "1" ] && [ -f "$t10" ]; then
@@ -419,6 +419,10 @@ deb_verify() {
     [ "$(select_mysql_version)" = "80" ] && [ "${TLBB_DB_LAYOUT:-3}" = "3" ] && main_db="tlbbdb_main"
     t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use ${main_db}; show tables;" 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] ${main_db} 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] ${main_db} 无表"
+    # 可选组件验证 (仅当对应命令存在; 不纳入 4 项基础分, 纯状态展示)
+    command -v nginx >/dev/null 2>&1 && { nginx -v >/dev/null 2>&1 && info "  [OK] 可选组件 nginx: $(nginx -v 2>&1 | head -1)" || warn "  [!!] 可选组件 nginx 验证失败"; }
+    command -v php >/dev/null 2>&1 && { php -v >/dev/null 2>&1 && info "  [OK] 可选组件 PHP: $(php -v 2>/dev/null | head -1)" || warn "  [!!] 可选组件 PHP 验证失败"; }
+    command -v redis-server >/dev/null 2>&1 && { redis-cli ping >/dev/null 2>&1 && info "  [OK] 可选组件 Redis 运行中 (127.0.0.1:6379)" || warn "  [!!] 可选组件 Redis 未运行"; }
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1
 }
@@ -445,7 +449,7 @@ deb_install_redis() {
     sleep 2
     local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
     if redis-cli -a "$rp" ping >/dev/null 2>&1; then
-        log "Redis 运行中, 密码已配置"
+        log "Redis 安装成功并验证通过: 127.0.0.1:6379, 密码已配置 ${rp}"
     else
         redis-cli CONFIG SET requirepass "$rp" >/dev/null 2>&1 && \
             redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置为 ${rp}" || \
@@ -465,14 +469,25 @@ deb_install_nginx() {
     if command -v nginx >/dev/null 2>&1; then
         log "Nginx 已安装, 跳过安装"
     elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        warn "离线模式未内置 nginx deb, 跳过 (可选组件, 在线模式可装)"
+        local nfile; nfile=$(find "$TLBB_OFFLINE_DIR/deb-packages" -maxdepth 2 -name "nginx*.deb" 2>/dev/null | head -1)
+        if [ -n "$nfile" ]; then
+            dpkg -i "$(dirname "$nfile")"/nginx*.deb >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1
+            command -v nginx >/dev/null 2>&1 && log "离线 nginx deb 安装完成" || warn "离线 nginx deb 安装失败"
+        else
+            warn "离线包未含 nginx deb, 跳过 (可选组件, 在线模式可装)"
+        fi
     else
         DEBIAN_FRONTEND=noninteractive apt-get install -y nginx >/dev/null 2>&1 || \
             { warn "nginx 安装失败 (源中无可用包或网络异常, 已跳过)"; return 0; }
     fi
     command -v nginx >/dev/null 2>&1 || return 0
+    # 安装成功验证
+    if nginx -v >/dev/null 2>&1; then
+        log "Nginx 安装成功并验证通过: $(nginx -v 2>&1 | head -1)"
+    else
+        warn "Nginx 已安装但验证失败 (nginx -v 异常, 请检查二进制完整性)"
+    fi
     systemctl enable --now nginx >/dev/null 2>&1 || service nginx start >/dev/null 2>&1 || true
-    log "Nginx 安装完成: $(nginx -v 2>&1 | head -1)"
 }
 
 # ---------- 可选组件: php (系统源最新版) ----------
@@ -480,7 +495,13 @@ deb_install_php() {
     if command -v php >/dev/null 2>&1; then
         log "PHP 已安装, 跳过安装"
     elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        warn "离线模式未内置 php deb, 跳过 (可选组件, 在线模式可装)"
+        local pfile; pfile=$(find "$TLBB_OFFLINE_DIR/deb-packages" -maxdepth 2 -name "php*.deb" 2>/dev/null | head -1)
+        if [ -n "$pfile" ]; then
+            dpkg -i "$(dirname "$pfile")"/php*.deb >/dev/null 2>&1 || DEBIAN_FRONTEND=noninteractive apt-get install -y -f >/dev/null 2>&1
+            command -v php >/dev/null 2>&1 && log "离线 php deb 安装完成" || warn "离线 php deb 安装失败"
+        else
+            warn "离线包未含 php deb, 跳过 (可选组件, 在线模式可装)"
+        fi
     else
         # 新系统源为 php + php-fpm (8.x), 老 Ubuntu (12-16) 为 php5 + php5-fpm
         DEBIAN_FRONTEND=noninteractive apt-get install -y php php-fpm >/dev/null 2>&1 || \
@@ -488,11 +509,16 @@ deb_install_php() {
             { warn "php 安装失败 (源中无可用包或网络异常, 已跳过)"; return 0; }
     fi
     command -v php >/dev/null 2>&1 || return 0
+    # 安装成功验证
+    if php -v >/dev/null 2>&1; then
+        log "PHP 安装成功并验证通过: $(php -v 2>/dev/null | head -1)"
+    else
+        warn "PHP 已安装但验证失败 (php -v 异常, 请检查依赖是否完整)"
+    fi
     # 启动 php-fpm (新系统为 php-fpm, 老 Ubuntu 为 php5-fpm; 无 systemctl 时用 service)
     systemctl enable --now php-fpm >/dev/null 2>&1 || \
     systemctl enable --now php5-fpm >/dev/null 2>&1 || \
     service php5-fpm start >/dev/null 2>&1 || service php-fpm start >/dev/null 2>&1 || true
-    log "PHP 安装完成: $(php -v 2>/dev/null | head -1)"
 }
 
 # ---------- 可选组件交互安装 (nginx/php/redis, 安装完 MySQL 后询问, 默认 no) ----------

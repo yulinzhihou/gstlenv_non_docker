@@ -81,7 +81,8 @@ curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main
 > - 指定数据库密码：`... | bash -s -- --dbpass 你的密码`
 > - 强制在线模式（配置国内源 repo 安装）：`... | bash -s -- --online`
 > - 离线模式（无网络，需先解压离线组件附件到 `/root/.tlgame/offline-packs/`）：`... | bash -s -- --offline`
-> - 预置可选组件（默认安装完 MySQL 后交互询问，直接回车=不装）：`TLBB_OPT_NGINX=1 TLBB_OPT_PHP=1 TLBB_OPT_REDIS=1 bash install.sh`
+> - 预置可选组件（默认安装完 MySQL 后交互询问，**提示 `[y/N, 回车=不安装]`，默认 N 不装**）：`TLBB_OPT_NGINX=1 TLBB_OPT_PHP=1 TLBB_OPT_REDIS=1 bash install.sh`
+> - 预置数据库结构（8.0+ 交互询问 3库/2库）：`TLBB_DB_LAYOUT=3|2 bash install.sh`
 
 **方式 B（离线/手动）下载部署环境的项目**，将本 `src` 包上传到服务器任意目录（如 `/root/src`），执行安装：
 
@@ -90,7 +91,7 @@ cd /root/src
 bash install.sh
 ```
 
-> 安装过程自动完成：识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ **8.0+ 交互选择数据库结构（3库=tlbbdb_10+tlbbdb_main+web 新端 / 2库=tlbbdb+web 怀旧端）** → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ 按所选结构建库并导入 → 可选组件（nginx/php/redis，回车=不装）→ 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
+> 安装过程自动完成：识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ **8.0+ 交互选择数据库结构（3库=tlbbdb_10+tlbbdb_main+web 新端 / 2库=tlbbdb+web 怀旧端）** → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ **按所选结构建库（目标库先建好）并指定库导入 SQL（兼容有/无 CREATE DATABASE/USE 头的 SQL）** → 可选组件（nginx/php/redis，提示 `[y/N, 回车=不安装]`，装后逐一验证 `nginx -v`/`php -v`/`redis-cli ping`）→ 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
 
 - 第 2 步：**如果想使用默认配置（默认的端口，默认的数据库密码 123456 等），可以跳过此步骤**
 
@@ -347,6 +348,7 @@ MySQL 离线包到本地 `offline/`（脚本按发行版分支自动选择镜像
 
 ```bash
 bash scripts/download_offline.sh el8 80      # el8 + MySQL 8.0 (阿里云 centos-vault AppStream)
+bash scripts/download_offline.sh el10 84     # el10 + MySQL 8.4 + 可选组件 (AppStream 直下)
 bash scripts/download_offline.sh el7 57      # el7 + MySQL 5.7 (官方直链, 已 EOL 镜像下架兜底)
 bash scripts/download_offline.sh el7 51      # el7 + MySQL 5.1 (已内置, 提示跳过)
 bash scripts/download_offline.sh el6 51      # el6 + MySQL 5.1 (阿里云 centos-vault)
@@ -359,6 +361,11 @@ bash scripts/download_offline.sh debian12 80 # Debian 12: 官方已无 mysql-ser
 > - **不同发行版必须使用不同安装包**（rpm/deb 格式、glibc、依赖链完全不同），无法跨发行版混用。
 > - el5/6/8 已 EOL，官方源下线 → 走 `centos-vault` 历史存档镜像；MySQL 5.7 官方仓库 2023-10 下线，
 >   脚本自动回退 `dev.mysql.com` 官方文件直链（已验证 5.7.44 全套 6 包可下）。
+> - 加 `--full` 参数时 RHEL 系除 MySQL 外还会下载 **可选组件 nginx/php/redis + unixODBC**（AppStream，
+>   按 `rpm-packages/<branch>/{nginx,php,redis,odbc}/` 子目录存放，离线安装器自动识别并逐一验证）。
+> - 若服务器到所有国内镜像的 dnf metadata 下载均失败（传输断流，如 `makecache 失败` + Extras 仅 153 B），
+>   属网络问题非路径问题：请在国内网络机器执行上述下载并 `bash scripts/pack_offline.sh` 打包后，
+>   服务器用 `--offline` 模式安装（MySQL 仍可 curl 直下官方源兜底）。
 > - 下载后执行 `bash scripts/pack_offline.sh` 重新打包即可分发到无网机。
 
 > 说明：仓库 clone 后需先通过 `pack_offline.sh` 重新生成 offline/（或直接从 `offline-packs/` 解压），再执行安装。

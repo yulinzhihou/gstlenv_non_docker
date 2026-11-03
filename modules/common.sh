@@ -231,7 +231,7 @@ ask_optional_component() {
     fi
     echo -e "${CGREEN}可选组件: ${comp}${CEND}" >&2
     echo "  ${desc}" >&2
-    eval "read -e -p \"是否安装 ${comp}? [y/N] \" ans $__read_src"
+    eval "read -e -p \"是否安装 ${comp}? [y/N, 回车=不安装] \" ans $__read_src"
     case "$ans" in
         y|Y|yes|YES|Yes) echo "1";;
         *) echo "0";;

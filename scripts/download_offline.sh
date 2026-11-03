@@ -177,23 +177,31 @@ dl_rhel_full() {
     local compat_out="$OFFLINE/rpm-packages/${branch}/compat"
     local odbc_out="$OFFLINE/rpm-packages/${branch}/odbc"
     local redis_out="$OFFLINE/rpm-packages/${branch}/redis"
-    mkdir -p "$compat_out" "$odbc_out" "$redis_out"
+    local nginx_out="$OFFLINE/rpm-packages/${branch}/nginx"
+    local php_out="$OFFLINE/rpm-packages/${branch}/php"
+    mkdir -p "$compat_out" "$odbc_out" "$redis_out" "$nginx_out" "$php_out"
     # 32位兼容库 (TLBB 端依赖) - 包名带版本号: glibc-2.12-...i686.rpm
     local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl|libcurl|libxml2)-[^"]*\.i686\.rpm'
     local odbc_filter='(unixODBC|mysql-connector-odbc|mariadb-connector-odbc)(-|[0-9.])'
-    local redis_filter='redis-[0-9]'
+    local redis_filter='((^|/)redis-[0-9]|(^|/)valkey-[0-9])'   # el7/8/9=redis, el10=valkey (官方替代)
+    local nginx_filter='(nginx|nginx-filesystem|nginx-core|nginx-mod)-'
+    # php 主包/子包 + 关键运行依赖 (oniguruma/libargon2/libzip 在 BaseOS/AppStream)
+    local php_filter='(php|php-fpm|php-cli|php-common|php-json|php-mbstring|php-xml|php-gd|php-mysqlnd|php-pdo|php-opcache|oniguruma|libargon2|libzip)-'
     for src in "$base_os" "$base_app"; do
         [ -z "$src" ] && continue
         fetch_rpm_from_repo "$src" "$compat_filter" "$compat_out" >/dev/null 2>&1 || true
         fetch_rpm_from_repo "$src" "$odbc_filter" "$odbc_out" >/dev/null 2>&1 || true
         if [ "$branch" != "el5" ] && [ "$branch" != "el6" ]; then
             fetch_rpm_from_repo "$src" "$redis_filter" "$redis_out" >/dev/null 2>&1 || true
+            fetch_rpm_from_repo "$src" "$nginx_filter" "$nginx_out" >/dev/null 2>&1 || true
+            fetch_rpm_from_repo "$src" "$php_filter" "$php_out" >/dev/null 2>&1 || true
         fi
     done
-    local c o r
+    local c o r ng p
     c=$(ls "$compat_out" 2>/dev/null | wc -l); o=$(ls "$odbc_out" 2>/dev/null | wc -l); r=$(ls "$redis_out" 2>/dev/null | wc -l)
-    log "「${branch}」minimal 完整集: compat=${c} odbc=${o} redis=${r}"
-    [ "$branch" = "el5" ] && warn "el5 官方无 redis 包, 需源码编译 (可跳过, billing 在 el5 场景可选)"
+    ng=$(ls "$nginx_out" 2>/dev/null | wc -l); p=$(ls "$php_out" 2>/dev/null | wc -l)
+    log "「${branch}」minimal 完整集: compat=${c} odbc=${o} redis=${r} nginx=${ng} php=${p}"
+    [ "$branch" = "el5" ] && warn "el5 官方无 redis/nginx/php 包, 需源码编译 (可跳过, billing 在 el5 场景可选)"
 }
 
 # ---------- 下载 Debian 系离线包 ----------
@@ -317,7 +325,7 @@ dl_fedora_full() {
     )
     local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl)-[^"]*\.i686\.rpm'
     local odbc_filter='(unixODBC|mariadb-connector-odbc|mysql-connector-odbc)(-|[0-9.])'
-    local redis_filter='redis-[0-9]'
+    local redis_filter='(^|/)redis-[0-9]'   # Fedora 源含 redis (锚定文件名, 排除 pcp-pmda-redis)
     local got=""
     for b in "${bases[@]}"; do
         local c o r

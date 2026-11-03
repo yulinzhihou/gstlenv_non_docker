@@ -105,6 +105,14 @@ pack_full() {
             $m download --resolve --destdir="$outdir" $dbpkg 2>/dev/null || \
                 warn "dnf download 数据库包失败, 请确认 AppStream 源可用后重试"
             echo "  ${target} MySQL ${mver} 已下载到 $outdir"
+            # 可选组件 (nginx/php/redis) + unixODBC: 安装器离线查找位置 rpm-packages/<branch>/{odbc,redis,nginx,php}/
+            local comp_out="$OFFLINE/rpm-packages/${target}"
+            mkdir -p "$comp_out/odbc" "$comp_out/redis" "$comp_out/nginx" "$comp_out/php"
+            $m download --resolve --destdir="$comp_out/odbc" unixODBC unixODBC-devel 2>/dev/null || true
+            $m download --resolve --destdir="$comp_out/redis" redis valkey 2>/dev/null || true
+            $m download --resolve --destdir="$comp_out/nginx" nginx 2>/dev/null || true
+            $m download --resolve --destdir="$comp_out/php" php php-fpm 2>/dev/null || true
+            echo "  ${target} 可选组件 (nginx/php/redis/unixODBC) 已下载到 $comp_out"
             ;;
         ubuntu18)
             local outdir="$OFFLINE/deb-packages/mysql57"

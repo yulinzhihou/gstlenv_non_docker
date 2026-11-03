@@ -22,7 +22,8 @@ rhel_pkgmgr() {
 
 rhel_pkg_install() {
     local m; m=$(rhel_pkgmgr)
-    $m -y install "$@" >/dev/null 2>&1 || { warn "包安装失败: $*"; return 1; }
+    # --setopt=retries 缓解大 metadata 下载断流 (部分网络首次传输会超时)
+    $m -y install --setopt=retries=4 --setopt=timeout=60 "$@" >/dev/null 2>&1 || { warn "包安装失败: $*"; return 1; }
 }
 
 # ---------- 切换国内源镜像 (各镜像路径结构一致, 仅替换域名) ----------
@@ -85,11 +86,12 @@ rhel_config_repo() {
     rm -f /etc/yum/pluginconf.d/fastestmirror.conf 2>/dev/null
     echo "timeout=120" >> /etc/yum.conf 2>/dev/null
     local m; m=$(rhel_pkgmgr)
+    local retry_opt="--setopt=retries=4 --setopt=timeout=60"
     $m clean all >/dev/null 2>&1
     # makecache 失败自动换镜像重试 (部分网络对某镜像大 metadata 下载会超时/断流,
     # 小体积源正常而 BaseOS/AppStream 失败即此类问题, 实测各镜像 URL 均可达)
     local cacheok=0
-    if $m makecache >/dev/null 2>&1; then
+    if $m makecache $retry_opt >/dev/null 2>&1; then
         cacheok=1
         log "国内源 makecache 完成"
     else
@@ -97,7 +99,7 @@ rhel_config_repo() {
         for mir in tencent huawei tuna; do
             rhel_switch_repo_mirror "$mir" || continue
             $m clean all >/dev/null 2>&1
-            if $m makecache >/dev/null 2>&1; then
+            if $m makecache $retry_opt >/dev/null 2>&1; then
                 log "已切换镜像源: $mir, makecache 完成"
                 cacheok=1
                 break
@@ -111,12 +113,17 @@ rhel_config_repo() {
 # ---------- 安装 32 位兼容库 ----------
 rhel_install_compat() {
     log "安装 32 位兼容库 (glibc/libstdc++/libnsl/libcrypt)..."
-    # 离线模式: 尝试本地 rpm 包目录 (offline/rpm-packages/<elX>/), 否则仅提示
+    # 离线模式: 尝试本地 rpm 包目录 (offline/rpm-packages/<elX>/compat/ 或根目录), 否则仅提示
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
         local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
-        if [ -d "$rdir" ] && ls "$rdir"/*.rpm >/dev/null 2>&1; then
-            local installed=0 skipped=0
-            for r in "$rdir"/*.rpm; do
+        # compat/ 子目录全部, 根目录仅匹配兼容库相关包 (避免误装 nginx/php/redis 等)
+        local cdir=""; [ -d "$rdir/compat" ] && cdir="$rdir/compat"
+        local rpms=""
+        rpms=$(find "$rdir" -maxdepth 1 -name "*.rpm" 2>/dev/null | grep -E '(glibc|libstdc|libnsl|libcrypt|zlib|ncurses|libgcc|libaio|openssl|libcurl|libxml2)')
+        [ -n "$cdir" ] && rpms="$rpms $(find "$cdir" -maxdepth 1 -name "*.rpm" 2>/dev/null)"
+        if [ -n "$rpms" ]; then
+            local installed=0 skipped=0 r
+            for r in $rpms; do
                 # 跳过系统核心库降级: 仅安装本机尚未安装的包
                 local pkgname; pkgname=$(rpm -qp --qf '%{NAME}' "$r" 2>/dev/null)
                 [ -z "$pkgname" ] && continue
@@ -683,18 +690,20 @@ FLUSH PRIVILEGES;" 2>/dev/null; }
         fi
     fi
     # 导入初始数据 (包内自带 CREATE DATABASE/USE, 直接导入; 字符集按档位)
+    # 兼容说明: 无论 SQL 文件是否自带 CREATE DATABASE/USE 头, 目标库均已先建好,
+    # 且导入时显式指定目标库 (mysql <db> < file) -> 无头 SQL 也能正确落入目标库
     local cs_opt="utf8"; [ "$mver" = "57" ] || [ "$mver" = "80" ] || [ "$mver" = "84" ] && cs_opt="utf8mb4"
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
         log "导入初始数据 (MySQL ${mver}: $sql_dir, 字符集 ${cs_opt}, ${dblayout} 库结构)..."
         if [ "$main_db" = "tlbbdb" ]; then
-            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
+            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" "$main_db" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
         else
             # 3 库模式: 主库物理名为 tlbbdb_main, 改写 tlbbdb.sql 的 CREATE DATABASE/USE 头后导入
-            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
+            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" "$main_db" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
         fi
-        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
+        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" web < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
         if [ "$need_t10" = "1" ] && [ -f "$t10" ]; then
-            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
+            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" tlbbdb_10 < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
         fi
     else
         warn "未找到离线 SQL 文件, 跳过自动导入"
@@ -767,12 +776,13 @@ rhel_install_odbc() {
             ;;
         el8|el9|el10)
             log "安装 unixODBC (源/离线包) + 离线 32 位 MySQL ODBC 3.51 驱动..."
-            # 离线模式: 从 rpm-packages 本地安装 unixODBC
+            # 离线模式: 从 rpm-packages 本地安装 unixODBC (odbc/ 子目录或根目录)
             if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
                 local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
-                if [ -d "$rdir" ] && ls "$rdir"/unixODBC*.rpm >/dev/null 2>&1; then
-                    for r in "$rdir"/unixODBC*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
-                    log "离线 unixODBC 安装完成 (来自 $rdir)"
+                local odfile; odfile=$(find "$rdir" -maxdepth 2 -name "unixODBC*.rpm" 2>/dev/null | head -1)
+                if [ -n "$odfile" ]; then
+                    for r in "$(dirname "$odfile")"/unixODBC*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
+                    log "离线 unixODBC 安装完成 (来自 $(dirname "$odfile"))"
                 else
                     warn "离线模式未找到 unixODBC rpm (offline/rpm-packages/$SYS_BRANCH/), isql 可能不可用"
                 fi
@@ -928,48 +938,78 @@ rhel_verify() {
             [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"
         fi
     fi
+    # 可选组件验证 (仅当对应命令存在; 不纳入 4 项基础分, 纯状态展示)
+    command -v nginx >/dev/null 2>&1 && { nginx -v >/dev/null 2>&1 && info "  [OK] 可选组件 nginx: $(nginx -v 2>&1 | head -1)" || warn "  [!!] 可选组件 nginx 验证失败"; }
+    command -v php >/dev/null 2>&1 && { php -v >/dev/null 2>&1 && info "  [OK] 可选组件 PHP: $(php -v 2>/dev/null | head -1)" || warn "  [!!] 可选组件 PHP 验证失败"; }
+    command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1 && { \
+        local rcli2="redis-cli"; command -v valkey-cli >/dev/null 2>&1 && rcli2="valkey-cli"
+        $rcli2 ping >/dev/null 2>&1 && info "  [OK] 可选组件 Redis/Valkey 运行中 (127.0.0.1:6379)" || warn "  [!!] 可选组件 Redis/Valkey 未运行"; }
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1
 }
 
-# ---------- 安装 Redis (billing/GM 工具依赖) ----------
+# ---------- 离线 rpm 查找 (根目录或子目录, 兼容 download_offline/pack_offline 两种放置) ----------
+# $1: 包名前缀 (如 redis/nginx/php/unixODBC), 返回第一个匹配文件绝对路径 (空=未找到)
+rhel_off_find() {
+    local prefix="$1" base="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
+    find "$base" -maxdepth 2 -name "${prefix}*.rpm" 2>/dev/null | head -1
+}
+
+# ---------- 可选组件: redis (billing/GM 工具依赖, 密码默认 gsgameshare.com) ----------
+# el10 官方 AppStream/EPEL 已无 redis 服务器包 (RHEL 10 生态以 Valkey 8 替代, RESP 协议兼容),
+# 在线/离线均自动回退 valkey (命令 valkey-server/valkey-cli, 端口与 requirepass 配置一致)
 rhel_install_redis() {
-    if rpm -q redis >/dev/null 2>&1 || command -v redis-server >/dev/null 2>&1; then
-        log "Redis 已安装, 跳过安装"
+    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
+    if rpm -q redis >/dev/null 2>&1 || command -v redis-server >/dev/null 2>&1 || \
+       rpm -q valkey >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1; then
+        log "Redis/Valkey 已安装, 跳过安装"
     elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        log "离线模式: 检查本地 redis rpm (offline/rpm-packages/$SYS_BRANCH/)..."
-        if ls "$TLBB_OFFLINE_DIR"/rpm-packages/$SYS_BRANCH/redis*.rpm >/dev/null 2>&1; then
-            rpm -ivh "$TLBB_OFFLINE_DIR"/rpm-packages/$SYS_BRANCH/redis*.rpm --nodeps --force >/dev/null 2>&1 && \
-                log "离线 redis rpm 安装完成" || warn "离线 redis rpm 安装失败"
+        log "离线模式: 检查本地 redis/valkey rpm (offline/rpm-packages/$SYS_BRANCH/)..."
+        local rfile; rfile=$(rhel_off_find redis); [ -z "$rfile" ] && rfile=$(rhel_off_find valkey)
+        if [ -n "$rfile" ]; then
+            rpm -ivh "$(dirname "$rfile")"/{redis,valkey}*.rpm --nodeps --force >/dev/null 2>&1 && \
+                log "离线 redis/valkey rpm 安装完成" || warn "离线 redis/valkey rpm 安装失败"
         else
-            warn "离线包未含 redis rpm, 跳过 (billing 验证可能需要 redis)"
+            warn "离线包未含 redis/valkey rpm, 跳过 (billing 验证可能需要 redis)"
         fi
     else
-        rhel_pkg_install redis 2>/dev/null || warn "redis 安装失败 (可选组件, billing 验证需要)"
+        if [ "$SYS_BRANCH" = "el10" ]; then
+            # el10: AppStream 无 redis 包, 官方以 valkey 替代
+            rhel_pkg_install valkey 2>/dev/null || { warn "valkey 安装失败 (el10 替代 redis, 可选组件, billing 验证需要)"; return 0; }
+            log "el10 官方已无 redis 包, 已安装 Valkey (Redis 兼容替代, 端口/密码协议一致)"
+        else
+            rhel_pkg_install redis 2>/dev/null || { warn "redis 安装失败 (可选组件, billing 验证需要)"; return 0; }
+        fi
     fi
-    command -v redis-server >/dev/null 2>&1 || return 0
-    # 启动 (兼容 systemd 服务名 redis/redis-server 与裸进程)
+    command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1 || return 0
+    local rcli="redis-cli"; command -v valkey-cli >/dev/null 2>&1 && rcli="valkey-cli"
+    # 启动 (兼容 systemd 服务名 redis/redis-server/valkey 与裸进程)
     systemctl enable --now redis >/dev/null 2>&1 || \
     systemctl enable --now redis-server >/dev/null 2>&1 || \
-        { redis-server --daemonize yes >/dev/null 2>&1 || warn "redis 启动失败"; }
+    systemctl enable --now valkey >/dev/null 2>&1 || \
+    systemctl enable --now valkey-server >/dev/null 2>&1 || \
+        { [ -x /usr/sbin/valkey-server ] && valkey-server --daemonize yes >/dev/null 2>&1 || \
+          redis-server --daemonize yes >/dev/null 2>&1 || warn "redis/valkey 启动失败"; }
     sleep 2
-    # 设置密码 (对齐 .env REDIS_PASSWORD, 默认 gsgameshare.com)
-    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
-    if redis-cli -a "$rp" ping >/dev/null 2>&1; then
-        log "Redis 运行中, 密码已配置"
-    else
-        redis-cli CONFIG SET requirepass "$rp" >/dev/null 2>&1 && \
-            redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置为 ${rp}" || \
-            warn "Redis 密码设置失败, 请手动: redis-cli CONFIG SET requirepass ${rp}"
-    fi
-    # 持久化密码配置 (写入 redis 配置文件)
-    local rconf=$(redis-server --version 2>/dev/null >/dev/null; find /etc -name "redis.conf" 2>/dev/null | head -1)
+    # 设置密码 (对齐 .env REDIS_PASSWORD, 默认 gsgameshare.com; 配置文件路径兼容 redis/valkey)
+    local rconf=""
+    [ -f /etc/redis.conf ] && rconf=/etc/redis.conf
+    [ -f /etc/redis/redis.conf ] && rconf=/etc/redis/redis.conf
+    [ -f /etc/valkey/valkey.conf ] && rconf=/etc/valkey/valkey.conf
     if [ -n "$rconf" ]; then
         grep -q "^requirepass" "$rconf" && \
             sed -i "s/^requirepass.*/requirepass ${rp}/" "$rconf" || \
             echo "requirepass ${rp}" >> "$rconf"
     fi
-    log "Redis 配置完成: 127.0.0.1:6379, 密码 ${rp}"
+    if $rcli -a "$rp" ping >/dev/null 2>&1; then
+        log "Redis/Valkey 安装成功并验证通过: 127.0.0.1:6379, 密码已配置 ${rp}"
+    else
+        systemctl restart valkey >/dev/null 2>&1 || systemctl restart redis >/dev/null 2>&1 || true
+        sleep 2
+        $rcli -a "$rp" ping >/dev/null 2>&1 && \
+            log "Redis/Valkey 密码已设置为 ${rp} 并验证通过" || \
+            warn "Redis/Valkey 密码设置失败, 请手动: $rcli CONFIG SET requirepass ${rp}"
+    fi
 }
 
 # ---------- 可选组件: nginx (系统源最新版) ----------
@@ -977,13 +1017,24 @@ rhel_install_nginx() {
     if command -v nginx >/dev/null 2>&1; then
         log "Nginx 已安装, 跳过安装"
     elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        warn "离线模式未内置 nginx 包, 跳过 (可选组件, 在线模式可装)"
+        local nfile; nfile=$(rhel_off_find nginx)
+        if [ -n "$nfile" ]; then
+            rpm -ivh "$(dirname "$nfile")"/nginx*.rpm --nodeps --force >/dev/null 2>&1 && \
+                log "离线 nginx rpm 安装完成" || warn "离线 nginx rpm 安装失败"
+        else
+            warn "离线包未含 nginx rpm, 跳过 (可选组件, 在线模式可装)"
+        fi
     else
         rhel_pkg_install nginx 2>/dev/null || { warn "nginx 安装失败 (当前系统源无可用包或网络异常, 已跳过)"; return 0; }
     fi
     command -v nginx >/dev/null 2>&1 || return 0
+    # 安装成功验证
+    if nginx -v >/dev/null 2>&1; then
+        log "Nginx 安装成功并验证通过: $(nginx -v 2>&1 | head -1)"
+    else
+        warn "Nginx 已安装但验证失败 (nginx -v 异常, 请检查二进制完整性)"
+    fi
     systemctl enable --now nginx >/dev/null 2>&1 || service nginx start >/dev/null 2>&1 || true
-    log "Nginx 安装完成: $(nginx -v 2>&1 | head -1)"
 }
 
 # ---------- 可选组件: php (系统源最新版) ----------
@@ -991,20 +1042,31 @@ rhel_install_php() {
     if command -v php >/dev/null 2>&1; then
         log "PHP 已安装, 跳过安装"
     elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-        warn "离线模式未内置 php 包, 跳过 (可选组件, 在线模式可装)"
+        local pfile; pfile=$(rhel_off_find php)
+        if [ -n "$pfile" ]; then
+            rpm -ivh "$(dirname "$pfile")"/php*.rpm --nodeps --force >/dev/null 2>&1 && \
+                log "离线 php rpm 安装完成" || warn "离线 php rpm 安装失败"
+        else
+            warn "离线包未含 php rpm, 跳过 (可选组件, 在线模式可装)"
+        fi
     else
         # AppStream/base 源即当前发行版可装的最新版 (el8+ 为 php 8.x, el7 为 5.4)
         rhel_pkg_install php 2>/dev/null || { warn "php 安装失败 (当前系统源无可用包或网络异常, 已跳过)"; return 0; }
         rhel_pkg_install php-fpm >/dev/null 2>&1 || true   # php-fpm 可选 (老系统源无此包时忽略)
     fi
     command -v php >/dev/null 2>&1 || return 0
+    # 安装成功验证
+    if php -v >/dev/null 2>&1; then
+        log "PHP 安装成功并验证通过: $(php -v 2>/dev/null | head -1)"
+    else
+        warn "PHP 已安装但验证失败 (php -v 异常, 请检查依赖是否完整)"
+    fi
     # 启动 php-fpm (el8+ 为 php-fpm, el6 为 php-fpm; 老系统无 systemctl 时用 service)
     if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files php-fpm >/dev/null 2>&1; then
         systemctl enable --now php-fpm >/dev/null 2>&1 || true
     else
         service php-fpm start >/dev/null 2>&1 || true
     fi
-    log "PHP 安装完成: $(php -v 2>/dev/null | head -1)"
 }
 
 # ---------- 可选组件交互安装 (nginx/php/redis, 安装完 MySQL 后询问, 默认 no) ----------
