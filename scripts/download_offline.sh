@@ -58,7 +58,16 @@ fetch_rpm_from_repo() {
             if command -v zstd >/dev/null 2>&1; then
                 zstd -d -f "$TMP/primary.xml.gz" -o "$TMP/primary.xml" 2>/dev/null && dec=1
             else
-                python3 -c "import zstandard,sys; zstandard.ZstdDecompressor().copy_stream(open('$TMP/primary.xml.gz','rb'), open('$TMP/primary.xml','wb'))" 2>/dev/null && dec=1
+                # 兼容无 zstd/python3 的环境 (如 Windows git bash: python3 缺失但 python 可用)
+                # 注意: 原生 python 不认 git bash 的 /tmp 路径, 需 cygpath 转 Windows 路径
+                local py=""
+                command -v python3 >/dev/null 2>&1 && py="python3"
+                [ -z "$py" ] && command -v python >/dev/null 2>&1 && py="python"
+                if [ -n "$py" ]; then
+                    local wgz="${TMP}/primary.xml.gz" wxml="${TMP}/primary.xml"
+                    command -v cygpath >/dev/null 2>&1 && { wgz=$(cygpath -w "$wgz"); wxml=$(cygpath -w "$wxml"); }
+                    $py -c "import zstandard,sys; zstandard.ZstdDecompressor().copy_stream(open(r'$wgz','rb'), open(r'$wxml','wb'))" 2>/dev/null && dec=1
+                fi
             fi
             [ -z "$dec" ] && return 1
             files=$(grep -oE '<location href="[^"]*\.rpm"' "$TMP/primary.xml" 2>/dev/null | sed 's/<location href="//;s/".*//' | \
@@ -142,16 +151,22 @@ dl_rhel() {
             ;;
         el8|el9|el10)
             # MySQL: 发行版 AppStream (el8 已 EOL 走 vault; el9 为 mysql-server 8.0;
-            # el10 为 mysql8.4-* 8.4 LTS)
+            # el10 为 mysql8.4-* 8.4 LTS); 多镜像兜底 (阿里云 > 华为 > 清华 > 腾讯)
             local bases=()
             case "$branch" in
-                el8)  bases+=("https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/x86_64/os");;
-                el9)  bases+=("https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os");;
-                el10) bases+=("https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os");;
+                el8)  bases+=("https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8-stream/AppStream/x86_64/os");;
+                el9)  bases+=("https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-stream/9-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/AppStream/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/9-stream/AppStream/x86_64/os");;
+                el10) bases+=("https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-stream/10-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/10-stream/AppStream/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/10-stream/AppStream/x86_64/os");;
             esac
             local n=""
             local mf
-            [ "$branch" = "el10" ] && mf="(mysql8\.4|mysql-selinux)-" || mf="mysql-"
+            case "$branch" in
+                # el8/el9 锁 8.0 主版本 (排除同源混入的 mysql 8.4 module 包);
+                # 注意 el8/9 的客户端主包名是裸的 "mysql-8.0.x" (无 -client 后缀)
+                el8)  mf="(mysql-(server|client|common|libs|errmsg)-8\.0|mysql-8\.0\.)";;
+                el9)  mf="(mysql-(server|client|common|libs|errmsg)-8\.0|mysql-8\.0\.)";;
+                el10) mf="(mysql8\.4|mysql-selinux)-";;
+            esac
             for b in "${bases[@]}"; do
                 n=$(fetch_rpm_from_repo "$b" "$mf" "$outdir") && break
                 warn "镜像不可用: $b, 尝试下一个"
@@ -161,19 +176,41 @@ dl_rhel() {
     esac
 }
 
-# ---------- minimal 完整集: compat(32位库) + odbc + redis (mysql 走 dl_rhel) ----------
+# ---------- minimal 完整集: compat(32位库) + odbc + redis + nginx + php (mysql 走 dl_rhel) ----------
+# 镜像优先级: 阿里云 > 华为 > 清华 > 腾讯 (国内网络可达性差异大, 多源兜底)
 dl_rhel_full() {
     local branch="$1"
-    local base_os="" base_app=""
+    local bases_os=() bases_app=()
     case "$branch" in
-        el5)  base_os="https://mirrors.aliyun.com/centos-vault/5.11/os/x86_64" ;;
-        el6)  base_os="https://mirrors.aliyun.com/centos-vault/6.10/os/x86_64" ;;
-        el7)  base_os="https://mirrors.aliyun.com/centos-vault/7.9.2009/os/x86_64"; base_app="https://mirrors.aliyun.com/centos-vault/7.9.2009/AppStream/x86_64/os" ;;
-        el8)  base_os="https://mirrors.aliyun.com/centos-vault/8-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" ;;
-        el9)  base_os="https://mirrors.aliyun.com/centos-stream/9-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os" ;;
-        el10) base_os="https://mirrors.aliyun.com/centos-stream/10-stream/BaseOS/x86_64/os"; base_app="https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os" ;;
+        el5) bases_os+=("https://mirrors.aliyun.com/centos-vault/5.11/os/x86_64");;
+        el6) bases_os+=("https://mirrors.aliyun.com/centos-vault/6.10/os/x86_64");;
+        el7)
+            bases_os+=("https://mirrors.aliyun.com/centos-vault/7.9.2009/os/x86_64" "https://repo.huaweicloud.com/centos-vault/7.9.2009/os/x86_64" "https://mirrors.tuna.tsinghua.edu.cn/centos-vault/7.9.2009/os/x86_64")
+            # 注意: 7.9.2009 的 AppStream repodata 已从国内 vault 移除 (404),
+            # nginx 主包改由 EPEL 7 兜底 (nginx-1.20.1-10.el7)
+            bases_app+=("https://mirrors.aliyun.com/centos-vault/7.9.2009/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-vault/7.9.2009/AppStream/x86_64/os" "https://repo.huaweicloud.com/epel/7/x86_64") ;;
+        el8)
+            bases_os+=("https://mirrors.aliyun.com/centos-vault/8-stream/BaseOS/x86_64/os" "https://repo.huaweicloud.com/centos-vault/8-stream/BaseOS/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8-stream/BaseOS/x86_64/os" "https://mirrors.cloud.tencent.com/centos-vault/8-stream/BaseOS/x86_64/os")
+            bases_app+=("https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.cloud.tencent.com/centos-vault/8-stream/AppStream/x86_64/os") ;;
+        el9)
+            bases_os+=("https://mirrors.aliyun.com/centos-stream/9-stream/BaseOS/x86_64/os" "https://repo.huaweicloud.com/centos-stream/9-stream/BaseOS/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/BaseOS/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/9-stream/BaseOS/x86_64/os")
+            bases_app+=("https://mirrors.aliyun.com/centos-stream/9-stream/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-stream/9-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/9-stream/AppStream/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/9-stream/AppStream/x86_64/os") ;;
+        el10)
+            bases_os+=("https://mirrors.aliyun.com/centos-stream/10-stream/BaseOS/x86_64/os" "https://repo.huaweicloud.com/centos-stream/10-stream/BaseOS/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/10-stream/BaseOS/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/10-stream/BaseOS/x86_64/os")
+            bases_app+=("https://mirrors.aliyun.com/centos-stream/10-stream/AppStream/x86_64/os" "https://repo.huaweicloud.com/centos-stream/10-stream/AppStream/x86_64/os" "https://mirrors.tuna.tsinghua.edu.cn/centos-stream/10-stream/AppStream/x86_64/os" "https://mirrors.cloud.tencent.com/centos-stream/10-stream/AppStream/x86_64/os") ;;
         *) warn "不支持的版本: $branch"; return 1;;
     esac
+    # 遍历所有源累计下载 (同一 filter 的包可能分布在 BaseOS+AppStream, 如 php 依赖 oniguruma
+    # 在 BaseOS、php 主包在 AppStream; 不能第一个有命中就停, 否则主包丢失)
+    fetch_all() {
+        local f="$1" d="$2" total=0 n=""
+        for src in "${bases_os[@]}" "${bases_app[@]}"; do
+            [ -z "$src" ] && continue
+            n=$(fetch_rpm_from_repo "$src" "$f" "$d" 2>/dev/null)
+            [ -n "$n" ] && total=$((total + n))
+        done
+        echo "$total"
+    }
     local compat_out="$OFFLINE/rpm-packages/${branch}/compat"
     local odbc_out="$OFFLINE/rpm-packages/${branch}/odbc"
     local redis_out="$OFFLINE/rpm-packages/${branch}/redis"
@@ -181,27 +218,28 @@ dl_rhel_full() {
     local php_out="$OFFLINE/rpm-packages/${branch}/php"
     mkdir -p "$compat_out" "$odbc_out" "$redis_out" "$nginx_out" "$php_out"
     # 32位兼容库 (TLBB 端依赖) - 包名带版本号: glibc-2.12-...i686.rpm
-    local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl|libcurl|libxml2)-[^"]*\.i686\.rpm'
-    local odbc_filter='(unixODBC|mysql-connector-odbc|mariadb-connector-odbc)(-|[0-9.])'
+    local compat_filter='((^|/)(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl|libcurl|libxml2)-[^"]*\.i686\.rpm)'
+    local odbc_filter='((^|/)unixODBC-[0-9]|(^|/)mysql-connector-odbc|(^|/)mariadb-connector-odbc|(^|/)libmyodbc|(^|/)myodbc|(^|/)libiodbc)'
     local redis_filter='((^|/)redis-[0-9]|(^|/)valkey-[0-9])'   # el7/8/9=redis, el10=valkey (官方替代)
-    local nginx_filter='(nginx|nginx-filesystem|nginx-core|nginx-mod)-'
+    # 注意 filter 匹配的是 primary.xml 中的完整 href (Packages/xxx.rpm 或 Packages/n/xxx.rpm),
+    # 必须用 (^|/) 锚定包名起点, 避免误匹配 pcp-pmda-nginx / graphviz-php 等
+    local nginx_filter='((^|/)nginx-[0-9]|(^|/)nginx-filesystem-|(^|/)nginx-core-|(^|/)nginx-mod-)'
     # php 主包/子包 + 关键运行依赖 (oniguruma/libargon2/libzip 在 BaseOS/AppStream)
-    local php_filter='(php|php-fpm|php-cli|php-common|php-json|php-mbstring|php-xml|php-gd|php-mysqlnd|php-pdo|php-opcache|oniguruma|libargon2|libzip)-'
-    for src in "$base_os" "$base_app"; do
-        [ -z "$src" ] && continue
-        fetch_rpm_from_repo "$src" "$compat_filter" "$compat_out" >/dev/null 2>&1 || true
-        fetch_rpm_from_repo "$src" "$odbc_filter" "$odbc_out" >/dev/null 2>&1 || true
-        if [ "$branch" != "el5" ] && [ "$branch" != "el6" ]; then
-            fetch_rpm_from_repo "$src" "$redis_filter" "$redis_out" >/dev/null 2>&1 || true
-            fetch_rpm_from_repo "$src" "$nginx_filter" "$nginx_out" >/dev/null 2>&1 || true
-            fetch_rpm_from_repo "$src" "$php_filter" "$php_out" >/dev/null 2>&1 || true
-        fi
-    done
+    local php_filter='((^|/)php-[0-9]|(^|/)php-fpm-|(^|/)php-cli-|(^|/)php-common-|(^|/)php-json-|(^|/)php-mbstring-|(^|/)php-xml-|(^|/)php-gd-|(^|/)php-mysqlnd-|(^|/)php-pdo-|(^|/)php-opcache-|(^|/)oniguruma-|(^|/)libargon2-|(^|/)libzip-)'
+    # el5/6 官方无 nginx/php/redis 包, 仅 compat+odbc
     local c o r ng p
-    c=$(ls "$compat_out" 2>/dev/null | wc -l); o=$(ls "$odbc_out" 2>/dev/null | wc -l); r=$(ls "$redis_out" 2>/dev/null | wc -l)
-    ng=$(ls "$nginx_out" 2>/dev/null | wc -l); p=$(ls "$php_out" 2>/dev/null | wc -l)
+    c=$(fetch_all "$compat_filter" "$compat_out")
+    o=$(fetch_all "$odbc_filter" "$odbc_out")
+    if [ "$branch" != "el5" ] && [ "$branch" != "el6" ]; then
+        r=$(fetch_all "$redis_filter" "$redis_out")
+        ng=$(fetch_all "$nginx_filter" "$nginx_out")
+        p=$(fetch_all "$php_filter" "$php_out")
+    else
+        r=0; ng=0; p=0
+    fi
     log "「${branch}」minimal 完整集: compat=${c} odbc=${o} redis=${r} nginx=${ng} php=${p}"
     [ "$branch" = "el5" ] && warn "el5 官方无 redis/nginx/php 包, 需源码编译 (可跳过, billing 在 el5 场景可选)"
+    [ "$branch" = "el6" ] && warn "el6 官方无 nginx/php 包 (php 5.3 除外), redis 在 EPEL; 可跳过, billing 在 el6 场景可选"
 }
 
 # ---------- 下载 Debian 系离线包 ----------
@@ -231,7 +269,8 @@ dl_debian() {
     esac
 }
 
-# Ubuntu: Ubuntu 官方主源含真实 MySQL 8.0, 下载 minimal 完整集 (server+client+libs+odbc+redis)
+# Ubuntu: Ubuntu 官方主源含真实 MySQL 8.0, 下载 minimal 完整集
+# (server+client+libs+odbc+redis+nginx+php, mysql/unixodbc/redis 在 main, nginx/php 在 universe)
 dl_ubuntu_deb() {
     local codename="$1" outdir="$2"
     local bases=(
@@ -239,13 +278,33 @@ dl_ubuntu_deb() {
         "https://mirrors.aliyun.com/ubuntu"
         "https://repo.huaweicloud.com/ubuntu"
     )
-    # minimal 完整集: mysql 服务端/客户端/库 + unixODBC + redis
-    local pkgs=(mysql-server-8.0 mysql-server-core-8.0 mysql-client-8.0 mysql-client-core-8.0
-                libmysqlclient21 mysql-common libaio1 unixodbc redis-server)
+    # Ubuntu 的 mysql/unixODBC/redis/nginx/php 全部在 main 仓库 (PHP 也在 main!);
+    # 注意 bionic(18.04) 的 MySQL 是 5.7 系列 (无 8.0), 包名随 codename 不同
+    local pv
+    case "$codename" in
+        noble)  pv="php8.3";;
+        jammy)  pv="php8.1";;
+        focal)  pv="php7.4";;
+        bionic) pv="php7.2";;
+        *)      pv="php";;
+    esac
+    local pkgs_main
+    case "$codename" in
+        bionic)
+            pkgs_main=(mysql-server-5.7 mysql-server-core-5.7 mysql-client-5.7 mysql-client-core-5.7
+                       libmysqlclient20 mysql-common libaio1 unixodbc redis-server
+                       nginx nginx-core nginx-common
+                       "${pv}" "${pv}-fpm" "${pv}-cli" "${pv}-common" "${pv}-mysql" php-common) ;;
+        *)
+            pkgs_main=(mysql-server-8.0 mysql-server-core-8.0 mysql-client-8.0 mysql-client-core-8.0
+                       libmysqlclient21 mysql-common libaio1 unixodbc redis-server
+                       nginx nginx-core nginx-common
+                       "${pv}" "${pv}-fpm" "${pv}-cli" "${pv}-common" "${pv}-mysql" php-common) ;;
+    esac
     local got=""
     for b in "${bases[@]}"; do
         local n=0
-        for p in "${pkgs[@]}"; do
+        for p in "${pkgs_main[@]}"; do
             [ "$(fetch_deb "$b" "dists/${codename}/main/binary-amd64/Packages.gz" "$p" "$outdir")" = "OK" ] && n=$((n + 1))
         done
         if [ "$n" -gt 0 ]; then got=1; log "Ubuntu ${codename} 完整集 deb 下载 ${n} 个 (${b})"; break; fi
@@ -273,12 +332,21 @@ dl_debian_deb() {
     done
     [ "$n" -gt 0 ] && { got=1; log "Debian ${codename} MySQL 8.0 官方 apt 下载 ${n} 个"; } \
                   || warn "Debian ${codename} MySQL 官方 apt 下载失败 (repo.mysql.com 可能不可达)"
-    # 2) Debian 官方镜像: 辅助组件 + 32 位兼容库
+    # 2) Debian 官方镜像: 辅助组件 + 32 位兼容库 + nginx/php (Debian nginx/php 均在 main)
     local dbases=(
         "https://mirrors.tuna.tsinghua.edu.cn/debian"
         "https://mirrors.aliyun.com/debian"
     )
-    local amd64=("unixodbc" "redis-server" "libaio1" "libaio1t64")
+    # php 大版本随 codename 不同: bookworm=8.2, bullseye=7.4
+    local pv
+    case "$codename" in
+        bookworm) pv="php8.2";;
+        bullseye) pv="php7.4";;
+        *)        pv="php";;
+    esac
+    local amd64=("unixodbc" "redis-server" "libaio1" "libaio1t64"
+                 "nginx" "nginx-core" "nginx-common"
+                 "${pv}" "${pv}-fpm" "${pv}-cli" "${pv}-common" "${pv}-mysql" "php-common")
     local i386=("libc6-i386" "libstdc++6" "libncurses6" "zlib1g" "libnsl2" "libaio1" "libaio1t64")
     for b in "${dbases[@]}"; do
         local n2=0 n3=0
@@ -317,24 +385,30 @@ dl_fedora() {
 dl_fedora_full() {
     local outdir="$OFFLINE/rpm-packages/fedora"
     local compat_out="$outdir/compat" odbc_out="$outdir/odbc" redis_out="$outdir/redis"
-    mkdir -p "$compat_out" "$odbc_out" "$redis_out"
+    local nginx_out="$outdir/nginx" php_out="$outdir/php"
+    mkdir -p "$compat_out" "$odbc_out" "$redis_out" "$nginx_out" "$php_out"
     # Fedora 34 archive (最低版本: rpm 依赖 >= 覆盖 34~38)
     local bases=(
         "https://archive.fedoraproject.org/pub/archive/fedora/linux/releases/34/Everything/x86_64/os"
         "https://archives.fedoraproject.org/pub/archive/fedora/linux/releases/34/Everything/x86_64/os"
     )
-    local compat_filter='(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl)-[^"]*\.i686\.rpm'
-    local odbc_filter='(unixODBC|mariadb-connector-odbc|mysql-connector-odbc)(-|[0-9.])'
+    local compat_filter='((^|/)(glibc|libstdc\+\+|zlib|ncurses-libs|libnsl|libxcrypt|libgcc|libaio|openssl)-[^"]*\.i686\.rpm)'
+    local odbc_filter='((^|/)unixODBC-[0-9]|(^|/)mariadb-connector-odbc|(^|/)mysql-connector-odbc)'
     local redis_filter='(^|/)redis-[0-9]'   # Fedora 源含 redis (锚定文件名, 排除 pcp-pmda-redis)
+    # filter 匹配 primary.xml 完整 href (Packages/xxx.rpm), 必须 (^|/) 锚定包名起点
+    local nginx_filter='((^|/)nginx-[0-9]|(^|/)nginx-filesystem-|(^|/)nginx-core-|(^|/)nginx-mod-)'
+    local php_filter='((^|/)php-[0-9]|(^|/)php-fpm-|(^|/)php-cli-|(^|/)php-common-|(^|/)php-json-|(^|/)php-mbstring-|(^|/)php-xml-|(^|/)php-gd-|(^|/)php-mysqlnd-|(^|/)php-pdo-|(^|/)php-opcache-|(^|/)oniguruma-|(^|/)libargon2-|(^|/)libzip-)'
     local got=""
     for b in "${bases[@]}"; do
-        local c o r
+        local c o r ng p
         c=$(fetch_rpm_from_repo "$b" "$compat_filter" "$compat_out" 2>/dev/null || echo 0)
         o=$(fetch_rpm_from_repo "$b" "$odbc_filter" "$odbc_out" 2>/dev/null || echo 0)
         r=$(fetch_rpm_from_repo "$b" "$redis_filter" "$redis_out" 2>/dev/null || echo 0)
-        if [ "$((c + o + r))" -gt 0 ]; then
+        ng=$(fetch_rpm_from_repo "$b" "$nginx_filter" "$nginx_out" 2>/dev/null || echo 0)
+        p=$(fetch_rpm_from_repo "$b" "$php_filter" "$php_out" 2>/dev/null || echo 0)
+        if [ "$((c + o + r + ng + p))" -gt 0 ]; then
             got=1
-            log "Fedora(基于F34 archive, 覆盖34~38) 完整集: compat=${c} odbc=${o} redis=${r} (${b})"
+            log "Fedora(基于F34 archive, 覆盖34~38) 完整集: compat=${c} odbc=${o} redis=${r} nginx=${ng} php=${p} (${b})"
             break
         fi
         warn "Fedora archive 不可用: $b"

@@ -346,25 +346,39 @@ bash scripts/pack_offline.sh install el7
 ### 方式三：镜像网站直下离线包（无对应系统 VM 时）
 
 不想准备对应发行版的联网机器时，可直接用内置下载脚本从**国内镜像网站**抓取
-MySQL 离线包到本地 `offline/`（脚本按发行版分支自动选择镜像：阿里云 > 腾讯 > 华为 > 清华）：
+MySQL 离线包到本地 `offline/`（脚本按发行版分支自动选择镜像：阿里云 > 华为 > 清华 > 腾讯，
+失败自动换下一个；`--full` 参数同时抓取 nginx/php/redis(valkey)/unixODBC 可选组件）：
 
 ```bash
-bash scripts/download_offline.sh el8 80      # el8 + MySQL 8.0 (阿里云 centos-vault AppStream)
-bash scripts/download_offline.sh el10 84     # el10 + MySQL 8.4 + 可选组件 (AppStream 直下)
-bash scripts/download_offline.sh el7 57      # el7 + MySQL 5.7 (官方直链, 已 EOL 镜像下架兜底)
-bash scripts/download_offline.sh el7 51      # el7 + MySQL 5.1 (已内置, 提示跳过)
-bash scripts/download_offline.sh el6 51      # el6 + MySQL 5.1 (阿里云 centos-vault)
-bash scripts/download_offline.sh el5 51      # el5 + MySQL 5.1 (阿里云 centos-vault)
-bash scripts/download_offline.sh ubuntu24 80 # Ubuntu 24.04 + MySQL 8.0 deb (清华/阿里云 ubuntu 主源)
-bash scripts/download_offline.sh debian12 80 # Debian 12: 官方已无 mysql-server (MariaDB 取代), 需 mysql-community
+# RHEL 系 (el5~el10, 每发行版 mysql<档位> + compat/odbc/redis/nginx/php)
+bash scripts/download_offline.sh --full el5 51   # el5 + MySQL 5.1 (阿里云 centos-vault; 官方无 nginx/php/redis 包, 需源码编译)
+bash scripts/download_offline.sh --full el6 51   # el6 + MySQL 5.1
+bash scripts/download_offline.sh --full el7 57   # el7 + MySQL 5.7 (官方直链兜底) + EPEL7 nginx
+bash scripts/download_offline.sh --full el8 80   # el8 + MySQL 8.0 (centos-vault AppStream)
+bash scripts/download_offline.sh --full el9 80   # el9 + MySQL 8.0 (centos-stream AppStream)
+bash scripts/download_offline.sh --full el10 84  # el10 + MySQL 8.4 (官方无 8.0; redis 为 valkey 替代)
+
+# Debian 系 (ubuntu18~24, debian11/12)
+bash scripts/download_offline.sh --full ubuntu18 80  # Ubuntu 18.04: MySQL 5.7 (bionic 无 8.0)
+bash scripts/download_offline.sh --full ubuntu20 80  # Ubuntu 20.04 + MySQL 8.0
+bash scripts/download_offline.sh --full ubuntu22 80  # Ubuntu 22.04 + MySQL 8.0
+bash scripts/download_offline.sh --full ubuntu24 80  # Ubuntu 24.04 + MySQL 8.0 (清华/阿里云 ubuntu 主源)
+bash scripts/download_offline.sh --full debian11 80  # Debian 11: mysql-community 官方 apt + 辅助组件
+bash scripts/download_offline.sh --full debian12 80  # Debian 12: mysql-community 官方 apt + 辅助组件
+
+# Fedora 34~38 (MySQL 官方通用二进制 tarball + F34 archive 组件, 覆盖 34~38)
+bash scripts/download_offline.sh --full fedora 80
 ```
 
 > 说明：
 > - **不同发行版必须使用不同安装包**（rpm/deb 格式、glibc、依赖链完全不同），无法跨发行版混用。
+> - 每软件每发行版**只保留一个最新版本**：下载后可执行 `bash scripts/prune_offline.sh`
+>   （`--dry-run` 预览）清理多版本堆积与同源混入包（如 el8/9 AppStream 的 mysql 8.4 module 包、误匹配的
+>   `pcp-pmda-nginx`/`graphviz-php` 等），并按 mysql<档位> 目录锚定主版本。
 > - el5/6/8 已 EOL，官方源下线 → 走 `centos-vault` 历史存档镜像；MySQL 5.7 官方仓库 2023-10 下线，
 >   脚本自动回退 `dev.mysql.com` 官方文件直链（已验证 5.7.44 全套 6 包可下）。
-> - 加 `--full` 参数时 RHEL 系除 MySQL 外还会下载 **可选组件 nginx/php/redis + unixODBC**（AppStream，
->   按 `rpm-packages/<branch>/{nginx,php,redis,odbc}/` 子目录存放，离线安装器自动识别并逐一验证）。
+> - el7 的 AppStream repodata 已从国内 vault 移除，nginx 主包由 **EPEL 7** 兜底；
+>   el10 官方无 redis 包（**Valkey 8** 替代），安装器已兼容 `redis-cli`/`valkey-cli`。
 > - 若服务器到所有国内镜像的 dnf metadata 下载均失败（传输断流，如 `makecache 失败` + Extras 仅 153 B），
 >   属网络问题非路径问题：请在国内网络机器执行上述下载并 `bash scripts/pack_offline.sh` 打包后，
 >   服务器用 `--offline` 模式安装（MySQL 仍可 curl 直下官方源兜底）。
@@ -387,12 +401,18 @@ src/
 │   ├── centos5.repo ...      RHEL 系 yum/dnf 源（centos5~10 + 云厂商）
 │   └── apt/                  Debian 系 apt 源（ubuntu-*.list ×25 + debian-*.list ×9）
 ├── offline/                 ★ 离线组件（按版本区分，不入 git）
-│   ├── el5/                 CentOS 5：unixODBC/mysql-odbc rpm + conf
-│   ├── el6/                 CentOS 6：unixODBC.rpm + mysql-odbc.rpm + libmyodbc3
-│   ├── el7/                 CentOS 7：MySQL 5.1 rpm + unixODBC 2.2.11 + 32/64 位驱动
-│   ├── el8_el9_el10/        现代 RHEL：32 位驱动 + unixODBC 源码
-│   ├── deb-common/          Debian 系：32 位驱动 + unixODBC 源码 + 备用驱动
+│   ├── rpm-packages/        RHEL 系：按发行版 el5~el10/fedora 分目录
+│   │   ├── el9/mysql80/     MySQL 8.0 全套 rpm (server/client/common/libs/errmsg, 仅最新版)
+│   │   ├── el9/{compat,odbc,redis,nginx,php}/   可选组件 + 32 位兼容库 + unixODBC
+│   │   ├── el10/mysql84/    MySQL 8.4 LTS 全套 (el10 官方无 8.0)
+│   │   └── fedora/mysql80/  MySQL 官方通用二进制 tarball (glibc>=2.17)
+│   ├── deb-packages/        Debian 系：按 ubuntu18~24/debian11~12 分目录 (mysql/nginx/php/redis/unixodbc)
 │   └── sql/                 tlbbdb.sql / web.sql（全系通用）
+├── scripts/
+│   ├── download_offline.sh  ★ 镜像直下离线包 (全发行版 --full, 多镜像兜底)
+│   ├── prune_offline.sh     ★ 多版本清理 (每软件每发行版只留最新版)
+│   ├── pack_offline.sh      ★ 打包 offline/ 到 offline-packs/ 版本化压缩包
+│   └── ubuntu.sh / debian.sh 版本一键脚本
 ├── offline-packs/           ★ 版本化离线压缩包（scripts/pack_offline.sh 生成，不入 git）
 ├── cmd/                     ★ gs 原命令名全局管理命令（参考 gstlenv，反 Docker 化）
 │   ├── gsctl.sh             统一命令入口（gsctl <命令> [参数...]）
@@ -403,7 +423,6 @@ src/
 │   ├── setvalid.sh / setpoint.sh / curgs.sh
 │   ├── change.sh / rebuild.sh / remove.sh
 │   └── gslog.sh / rmlog.sh / step.sh / gstl.sh / upgm.sh / upow.sh / gsfix.sh / transfer.sh
-├── scripts/                 版本一键脚本（ubuntu.sh / debian.sh 等）
 └── docs/                    文档
     ├── 安装说明.md
     ├── 环境创建说明.md
