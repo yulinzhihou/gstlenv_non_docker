@@ -41,7 +41,7 @@ fed_check_offline() {
     [ -f "$d/mysql80/mysql-8.0"*.tar.xz ] 2>/dev/null || need="MySQL 通用二进制 (fedora/mysql80/)"
     ls "$d/compat"/*.rpm >/dev/null 2>&1 || need="$need compat"
     ls "$d/odbc"/*.rpm >/dev/null 2>&1 || need="$need odbc"
-    ls "$d/redis"/*.rpm >/dev/null 2>&1 || need="$need redis"
+    # redis 为可选组件, 缺失不阻断安装 (离线下可选组件由 fed_install_optional 提示跳过)
     [ -n "$need" ] && warn "Fedora 离线缺少: $need"
 }
 
@@ -204,13 +204,49 @@ fed_install_redis() {
     redis-cli -a gsgameshare.com ping >/dev/null 2>&1 && log "Redis 已启动 (密码 gsgameshare.com)" || warn "Redis 未响应 (可稍后手动启动)"
 }
 
+# ---------- 可选组件: nginx (系统源最新版) ----------
+fed_install_nginx() {
+    if command -v nginx >/dev/null 2>&1; then
+        log "Nginx 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        warn "离线模式未内置 nginx rpm, 跳过 (可选组件, 在线模式可装)"
+    else
+        dnf install -y nginx >/dev/null 2>&1 || { warn "nginx 安装失败 (网络异常, 已跳过)"; return 0; }
+    fi
+    command -v nginx >/dev/null 2>&1 || return 0
+    systemctl enable --now nginx >/dev/null 2>&1 || true
+    log "Nginx 安装完成: $(nginx -v 2>&1 | head -1)"
+}
+
+# ---------- 可选组件: php (系统源最新版) ----------
+fed_install_php() {
+    if command -v php >/dev/null 2>&1; then
+        log "PHP 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        warn "离线模式未内置 php rpm, 跳过 (可选组件, 在线模式可装)"
+    else
+        dnf install -y php php-fpm >/dev/null 2>&1 || { warn "php 安装失败 (网络异常, 已跳过)"; return 0; }
+    fi
+    command -v php >/dev/null 2>&1 || return 0
+    systemctl enable --now php-fpm >/dev/null 2>&1 || true
+    log "PHP 安装完成: $(php -v 2>/dev/null | head -1)"
+}
+
+# ---------- 可选组件交互安装 (nginx/php/redis, 安装完 MySQL 后询问, 默认 no) ----------
+fed_install_optional() {
+    log "可选组件询问 (nginx/php/redis, 直接回车=不安装)..."
+    [ "$(ask_optional_component nginx "Web 服务器, 用于 GM 工具/网站 (将安装当前系统源最新版)" TLBB_OPT_NGINX)" = "1" ] && fed_install_nginx
+    [ "$(ask_optional_component php "PHP 运行时, 配合 Nginx 提供网站服务 (将安装当前系统源最新版)" TLBB_OPT_PHP)" = "1" ] && fed_install_php
+    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 密码默认 gsgameshare.com (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && fed_install_redis
+}
+
 # ---------- 主流程 ----------
 fed_install() {
     fed_config_source
     fed_install_compat
     fed_install_db
     fed_install_odbc
-    fed_install_redis
+    fed_install_optional   # nginx/php/redis 可选组件 (交互询问, 默认不安装)
     fed_verify
 }
 
@@ -222,6 +258,10 @@ fed_verify() {
         { log "[PASS] MySQL 运行中 ($(mysql -uroot -p"${TLBB_DB_PASS:-123456}" -N -e 'SELECT VERSION()' 2>/dev/null))"; ok=$((ok+1)); } || \
         warn "[FAIL] MySQL 未运行"
     isql -v tlbbdb -e "SELECT 1" >/dev/null 2>&1 && { log "[PASS] ODBC DSN tlbbdb 连通"; ok=$((ok+1)); } || warn "[FAIL] ODBC 未连通"
-    redis-cli -a gsgameshare.com ping >/dev/null 2>&1 && { log "[PASS] Redis PONG"; ok=$((ok+1)); } || warn "[FAIL] Redis 未响应"
+    if command -v redis-server >/dev/null 2>&1 || command -v redis-cli >/dev/null 2>&1; then
+        redis-cli -a gsgameshare.com ping >/dev/null 2>&1 && { log "[PASS] Redis PONG"; ok=$((ok+1)); } || warn "[FAIL] Redis 未响应"
+    else
+        log "Redis 未安装 (可选组件), 跳过验证"
+    fi
     log "Fedora 验证: $ok/3 通过"
 }

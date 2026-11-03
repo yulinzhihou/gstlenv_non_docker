@@ -204,6 +204,40 @@ ask_dbpass() {
     export TLBB_DB_PASS
 }
 
+# ---------- 可选组件交互询问 (nginx/php/redis, 默认 no) ----------
+# 输出: 1=安装 0=不安装 (stdout 仅输出结果, 提示信息走 stderr, 便于命令替换取值);
+# 支持 TLBB_OPT_<NAME>=1|0 预置跳过询问 (非交互模式默认不装)
+ask_optional_component() {
+    # $1: 组件名 (nginx|php|redis), $2: 展示说明, $3: 预置环境变量名 (TLBB_OPT_NGINX 等)
+    local comp="$1" desc="$2" var="$3" preset ans __read_src
+    preset="${!var:-}"
+    if [ "$preset" = "1" ] || [ "$preset" = "0" ]; then
+        [ "$preset" = "1" ] && log "${comp}: 已通过 ${var}=1 预置安装" >&2 || log "${comp}: 已通过 ${var}=0 预置跳过" >&2
+        echo "$preset"; return 0
+    fi
+    # 非交互模式: 默认不安装
+    if [ "$TLBB_NONINTERACTIVE" = "1" ]; then
+        warn "非交互模式, 跳过可选组件 ${comp} (如需安装: ${var}=1 bash install.sh)" >&2
+        echo "0"; return 0
+    fi
+    # 检测 stdin 是否为终端 (curl | bash 管道模式), 无终端则默认不安装
+    if [ -t 0 ]; then
+        __read_src=""
+    elif [ -r /dev/tty ]; then
+        __read_src="< /dev/tty"
+    else
+        warn "检测到非交互模式, 跳过可选组件 ${comp} (如需安装: ${var}=1 bash install.sh)" >&2
+        echo "0"; return 0
+    fi
+    echo -e "${CGREEN}可选组件: ${comp}${CEND}" >&2
+    echo "  ${desc}" >&2
+    eval "read -e -p \"是否安装 ${comp}? [y/N] \" ans $__read_src"
+    case "$ans" in
+        y|Y|yes|YES|Yes) echo "1";;
+        *) echo "0";;
+    esac
+}
+
 # ---------- 国内源可用性探测 ----------
 # 返回第一个可用的镜像基础 URL
 probe_mirror() {

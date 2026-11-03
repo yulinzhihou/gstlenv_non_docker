@@ -884,6 +884,49 @@ rhel_install_redis() {
     log "Redis 配置完成: 127.0.0.1:6379, 密码 ${rp}"
 }
 
+# ---------- 可选组件: nginx (系统源最新版) ----------
+rhel_install_nginx() {
+    if command -v nginx >/dev/null 2>&1; then
+        log "Nginx 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        warn "离线模式未内置 nginx 包, 跳过 (可选组件, 在线模式可装)"
+    else
+        rhel_pkg_install nginx 2>/dev/null || { warn "nginx 安装失败 (当前系统源无可用包或网络异常, 已跳过)"; return 0; }
+    fi
+    command -v nginx >/dev/null 2>&1 || return 0
+    systemctl enable --now nginx >/dev/null 2>&1 || service nginx start >/dev/null 2>&1 || true
+    log "Nginx 安装完成: $(nginx -v 2>&1 | head -1)"
+}
+
+# ---------- 可选组件: php (系统源最新版) ----------
+rhel_install_php() {
+    if command -v php >/dev/null 2>&1; then
+        log "PHP 已安装, 跳过安装"
+    elif [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
+        warn "离线模式未内置 php 包, 跳过 (可选组件, 在线模式可装)"
+    else
+        # AppStream/base 源即当前发行版可装的最新版 (el8+ 为 php 8.x, el7 为 5.4)
+        rhel_pkg_install php 2>/dev/null || { warn "php 安装失败 (当前系统源无可用包或网络异常, 已跳过)"; return 0; }
+        rhel_pkg_install php-fpm >/dev/null 2>&1 || true   # php-fpm 可选 (老系统源无此包时忽略)
+    fi
+    command -v php >/dev/null 2>&1 || return 0
+    # 启动 php-fpm (el8+ 为 php-fpm, el6 为 php-fpm; 老系统无 systemctl 时用 service)
+    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files php-fpm >/dev/null 2>&1; then
+        systemctl enable --now php-fpm >/dev/null 2>&1 || true
+    else
+        service php-fpm start >/dev/null 2>&1 || true
+    fi
+    log "PHP 安装完成: $(php -v 2>/dev/null | head -1)"
+}
+
+# ---------- 可选组件交互安装 (nginx/php/redis, 安装完 MySQL 后询问, 默认 no) ----------
+rhel_install_optional() {
+    log "可选组件询问 (nginx/php/redis, 直接回车=不安装)..."
+    [ "$(ask_optional_component nginx "Web 服务器, 用于 GM 工具/网站 (将安装当前系统源最新版)" TLBB_OPT_NGINX)" = "1" ] && rhel_install_nginx
+    [ "$(ask_optional_component php "PHP 运行时, 配合 Nginx 提供网站服务 (将安装当前系统源最新版)" TLBB_OPT_PHP)" = "1" ] && rhel_install_php
+    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 密码默认 gsgameshare.com (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && rhel_install_redis
+}
+
 # ---------- RHEL 主流程 ----------
 rhel_install() {
     local m; m=$(rhel_pkgmgr)
@@ -894,7 +937,7 @@ rhel_install() {
     rhel_install_db
     rhel_start_db
     rhel_setup_db
-    rhel_install_redis
+    rhel_install_optional   # nginx/php/redis 可选组件 (交互询问, 默认不安装)
     rhel_install_odbc
     rhel_config_odbc
     rhel_verify

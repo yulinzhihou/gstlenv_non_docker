@@ -18,6 +18,7 @@
 #   bash install.sh --dbpass xxxx       # 指定数据库密码
 #   bash install.sh --online            # 强制在线模式 (配置国内源, repo 安装)
 #   bash install.sh --offline           # 强制离线模式 (无网络, 本地 rpm/deb 命令安装)
+#   TLBB_OPT_NGINX=1 TLBB_OPT_PHP=1 TLBB_OPT_REDIS=1 bash install.sh  # 预置可选组件安装 (默认询问, 回车=不装)
 # ------------------------------------------------------------
 # 支持系统 (自动识别, 一键安装):
 #   RHEL 系: CentOS 5/6/7/8/9/10 | Rocky/Alma 8/9 | Oracle Linux
@@ -32,7 +33,9 @@
 #   3) 安装数据库 (MySQL 5.1 / 5.7 / 8.0 / 8.4 多档位, 不用 MariaDB)
 #   4) 安装 unixODBC + MySQL ODBC 驱动 (32 位 + 64 位)
 #   5) 导入 tlbbdb / web 库
-#   6) 部署 gs 原命令名 (untar/setini/runtlbb/... 与 gstlenv 完全一致) + gsctl 统一入口
+#   6) 可选组件 (安装完 MySQL 后交互询问, 默认不装): nginx / php / redis
+#      redis 密码默认 gsgameshare.com; 可 TLBB_OPT_NGINX/PHP/REDIS=1 预置安装
+#   7) 部署 gs 原命令名 (untar/setini/runtlbb/... 与 gstlenv 完全一致) + gsctl 统一入口
 # ============================================================
 
 export LC_ALL=C
