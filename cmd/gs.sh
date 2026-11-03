@@ -62,13 +62,15 @@ ${CYELLOW}###########################################
 #    27:delbak     删除备份文件           
 #    28:gsfix      修复环境安装           
 #    29:logbak     定时备份日志文件       
+#    30:mysql-user 设置MySQL授权用户/主机/密码(默认0.0.0.0/0=所有机器)
+#    31:mysql-lock 关闭所有机器连接,仅保留root@127.0.0.1+root@localhost
 #    0:q 退出,或者按 CTRL+C               
 ###########################################${CEND}
 EFF
 }
 
 # 命令执行/帮助分发 (对齐 gstlenv: 打印帮助后直接执行)
-CMD_MAP="untar setini runtlbb runtop link swap rebuild remove setconfig change restart gsbak upcmd upgm upow step gstl backup close gslog rmlog curgs setpoint reset setvalid restore delbak gsfix logbak"
+CMD_MAP="untar setini runtlbb runtop link swap rebuild remove setconfig change restart gsbak upcmd upgm upow step gstl backup close gslog rmlog curgs setpoint reset setvalid restore delbak gsfix logbak mysql-user mysql-lock"
 
 run_or_help() {
     local name="$1"
@@ -105,6 +107,8 @@ run_or_help() {
         delbak)   echo "${CGREEN}delbak: 删除备份文件${CEND}"; delbak;;
         gsfix)    echo "${CGREEN}gsfix: 修复环境安装${CEND}"; gsfix;;
         logbak)   echo "${CGREEN}logbak: 定时备份日志文件${CEND}"; logbak;;
+        mysql-user) echo "${CGREEN}mysql-user: 设置MySQL授权用户/主机/密码 (用法: mysql-user [用户名] [密码] [主机], 主机默认 0.0.0.0/0=所有机器)${CEND}"; mysql-user;;
+        mysql-lock) echo "${CGREEN}mysql-lock: 关闭所有机器连接, 仅保留 root@127.0.0.1 与 root@localhost${CEND}"; mysql-lock;;
         *) echo "${CRED}未知命令: $name${CEND}"; return 1;;
     esac
 }
@@ -117,7 +121,7 @@ else
         [0-9]*)
             # 数字序号 -> 命令名
             n=$((10#$1))
-            if [ $n -ge 1 ] && [ $n -le 29 ]; then
+            if [ $n -ge 1 ] && [ $n -le 31 ]; then
                 cmdname=$(echo "$CMD_MAP" | awk -v i="$n" '{print $i}')
                 run_or_help "$cmdname"
             else
