@@ -25,6 +25,21 @@ rhel_pkg_install() {
     $m -y install "$@" >/dev/null 2>&1 || { warn "包安装失败: $*"; return 1; }
 }
 
+# ---------- 切换国内源镜像 (各镜像路径结构一致, 仅替换域名) ----------
+rhel_switch_repo_mirror() {
+    # $1: tencent|huawei|tuna (aliyun 为默认首选, 不参与切换)
+    local mir="$1" dom=""
+    case "$mir" in
+        tencent) dom="mirrors.cloud.tencent.com";;
+        huawei)  dom="mirrors.huaweicloud.com";;
+        tuna)    dom="mirrors.tuna.tsinghua.edu.cn";;
+        *)       return 1;;
+    esac
+    # 匹配 "//域名" 以同时覆盖 http/https 前缀
+    sed -i "s|//mirrors\.aliyun\.com|//${dom}|g; s|//mirrors\.cloud\.tencent\.com|//${dom}|g; s|//mirrors\.huaweicloud\.com|//${dom}|g; s|//mirrors\.tuna\.tsinghua\.edu\.cn|//${dom}|g" /etc/yum.repos.d/tlbb.repo 2>/dev/null
+    [ -s /etc/yum.repos.d/tlbb.repo ]
+}
+
 # ---------- 配置国内 yum/dnf 源 ----------
 rhel_config_repo() {
     # 离线模式: 跳过源配置, 直接使用本地安装包
@@ -71,7 +86,26 @@ rhel_config_repo() {
     echo "timeout=120" >> /etc/yum.conf 2>/dev/null
     local m; m=$(rhel_pkgmgr)
     $m clean all >/dev/null 2>&1
-    $m makecache >/dev/null 2>&1 || warn "makecache 失败, 请检查网络"
+    # makecache 失败自动换镜像重试 (部分网络对某镜像大 metadata 下载会超时/断流,
+    # 小体积源正常而 BaseOS/AppStream 失败即此类问题, 实测各镜像 URL 均可达)
+    local cacheok=0
+    if $m makecache >/dev/null 2>&1; then
+        cacheok=1
+        log "国内源 makecache 完成"
+    else
+        warn "makecache 失败, 自动依次换用 腾讯云/华为云/清华 镜像重试..."
+        for mir in tencent huawei tuna; do
+            rhel_switch_repo_mirror "$mir" || continue
+            $m clean all >/dev/null 2>&1
+            if $m makecache >/dev/null 2>&1; then
+                log "已切换镜像源: $mir, makecache 完成"
+                cacheok=1
+                break
+            fi
+            warn "镜像源 $mir makecache 仍失败, 尝试下一个..."
+        done
+    fi
+    [ "$cacheok" = "0" ] && warn "所有国内镜像 makecache 均失败, 请检查网络 (安装将继续, 部分组件可能失败)"
 }
 
 # ---------- 安装 32 位兼容库 ----------
@@ -261,6 +295,11 @@ rhel_download_mysql_rpm() {
     # 4. 本地安装 (禁用 mysql repo 避免触发失效源)
     dnf --disablerepo="mysql*" localinstall -y "$tmpd"/*.rpm >/dev/null 2>&1 || \
     rpm -ivh "$tmpd"/*.rpm --nodeps --force >/dev/null 2>&1 || { warn "rpm 本地安装失败"; return 1; }
+    # 5. 补装 mysqld 系统依赖 (rpm --nodeps 场景可能缺失 libaio/protobuf, 否则 mysqld 起不来)
+    local dep
+    for dep in libaio protobuf-lite numactl-libs; do
+        rpm -q "$dep" >/dev/null 2>&1 || rhel_pkg_install "$dep" >/dev/null 2>&1
+    done
     log "MySQL ${ver} rpm 直下安装完成 (最新版)"
     return 0
 }
@@ -445,6 +484,11 @@ rhel_start_db() {
             chkconfig mysqld on 2>/dev/null || true
             ;;
         el8|el9|el10)
+            # 确保 mysqld 系统依赖就位 (rpm --nodeps 直下场景可能缺失, 否则 mysqld 起不来)
+            local dep
+            for dep in libaio protobuf-lite numactl-libs; do
+                rpm -q "$dep" >/dev/null 2>&1 || rhel_pkg_install "$dep" >/dev/null 2>&1
+            done
             # MySQL 官方 rpm 服务名为 mysqld (非 mariadb)
             systemctl enable mysqld 2>/dev/null || true
             systemctl start mysqld 2>/dev/null || service mysqld start 2>/dev/null || true
@@ -459,6 +503,8 @@ rhel_start_db() {
         sleep 2
     done
     warn "数据库未完全就绪, 继续尝试..."
+    # 输出 mysqld 日志便于定位 (缺依赖/初始化失败等)
+    journalctl -u mysqld --no-pager -n 10 2>/dev/null | tail -5 >&2 || true
 }
 
 # ---------- MySQL 5.7/8.0 首启临时密码处理 ----------
