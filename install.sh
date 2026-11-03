@@ -279,11 +279,19 @@ install_cmd() {
 # ---------- 完成横幅 ----------
 finish_banner() {
     local mver; mver=$(select_mysql_version)
+    local not_installed=""
+    command -v nginx >/dev/null 2>&1 || not_installed="$not_installed nginx"
+    command -v php >/dev/null 2>&1 || not_installed="$not_installed php"
+    command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1 || not_installed="$not_installed redis"
     echo ""
     echo "=============================================================="
     echo "  TLBB 原生环境安装完成"
     echo "--------------------------------------------------------------"
-    echo "  数据库 : MySQL ${mver}  root / ${TLBB_DB_PASS}  游戏账号: ${TLBB_MYSQL_USER} / ${TLBB_MYSQL_PASSWORD}"
+    echo "  数据库 : MySQL ${mver}  (root 本地/远程均已设置密码)"
+    echo "  MySQL 账号 (本地+远程均可登录):"
+    echo "    root : root@localhost / ${TLBB_DB_PASS}"
+    echo "    root : root@'%'        / ${TLBB_DB_PASS}   (远程登录)"
+    echo "    gs   : gs@'%'          / ${TLBB_MYSQL_PASSWORD}   (游戏/服务端专用, 远程登录)"
     echo "  库     : tlbbdb, web"
     echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
     echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
@@ -292,6 +300,11 @@ finish_banner() {
     echo "  帮助   : gs (命令帮助)  /  gsctl <命令> (统一入口)"
     echo "  端口   : 数据库 ${TLBB_MYSQL_PORT} | 登录 ${TLBB_LOGIN_PORT} | 游戏 ${TLBB_SERVER_PORT} | billing ${TLBB_BILLING_PORT} | web ${TLBB_WEB_PORT}/${TLBB_WEB_GM_PORT}"
     echo "          (默认对齐 gstlenv, 请按需在安全组放行)"
+    if [ -n "$not_installed" ]; then
+        echo "--------------------------------------------------------------"
+        echo "  未安装可选组件:${not_installed}"
+        echo "  补装命令: bash /root/.tlgame/install.sh --online  (询问时输入 y)"
+    fi
     echo "=============================================================="
     echo "  GS游享网 · 天龙八部万能环境 | 售后/帮助: gs (命令菜单)"
     echo "  出品: GS游享网 (gsgameshare.com)  仅供学习研究, 24小时内删除"

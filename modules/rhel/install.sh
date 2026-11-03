@@ -488,6 +488,7 @@ rhel_install_db() {
                     rhel_download_mysql_rpm 80 "$rel8" || \
                     rhel_fallback_offline_rpm || die "MySQL 8.0 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
                 fi
+            fi
             ;;
         84)
             log "安装 MySQL 8.4 (官方/国内镜像源)..."
@@ -531,6 +532,13 @@ rhel_start_db() {
             for dep in libaio protobuf-lite numactl-libs; do
                 rpm -q "$dep" >/dev/null 2>&1 || rhel_pkg_install "$dep" >/dev/null 2>&1
             done
+            # MySQL 8.0/8.4: 启用 mysql_native_password 插件 (8.4 默认禁用, 8.0 为兼容可选)
+            # 兼容 ODBC 3.51 老驱动/天龙老端 native 认证; 必须在 mysqld 首次启动前写入
+            if [ "$mver" = "80" ] || [ "$mver" = "84" ]; then
+                if ! grep -rq "mysql_native_password" /etc/my.cnf.d/ /etc/my.cnf 2>/dev/null; then
+                    echo -e "[mysqld]\nmysql_native_password=ON" > /etc/my.cnf.d/zz-mysql-native.cnf
+                fi
+            fi
             # MySQL 官方 rpm 服务名为 mysqld (非 mariadb)
             systemctl enable mysqld 2>/dev/null || true
             systemctl start mysqld 2>/dev/null || service mysqld start 2>/dev/null || true
@@ -625,8 +633,13 @@ rhel_handle_first_boot() {
         if mysql -uroot -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1; then
             log "skip-grant-tables 重置成功 (方式: $skiptype)"
         else
-            warn "skip-grant-tables 重置失败 (老版本可用 SET PASSWORD 方式)"
-            mysql -uroot -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1
+            # 8.4 未启用 mysql_native_password 插件时 WITH native 会报错, 兜底用默认 caching_sha2_password
+            if mysql -uroot -e "FLUSH PRIVILEGES; ALTER USER 'root'@'localhost' IDENTIFIED BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1; then
+                log "skip-grant-tables 重置成功 (caching_sha2_password 兜底, 方式: $skiptype)"
+            else
+                warn "skip-grant-tables 重置失败 (老版本可用 SET PASSWORD 方式)"
+                mysql -uroot -e "FLUSH PRIVILEGES; SET PASSWORD FOR 'root'@'localhost' = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" </dev/null >/dev/null 2>&1
+            fi
         fi
         # 恢复正常启动 (去掉 skip-grant 配置)
         if [ "$skiptype" = "safe" ]; then
@@ -656,6 +669,8 @@ rhel_handle_first_boot() {
         -e "ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
     mysql -uroot -p"$tmp_pw" </dev/null \
         -e "SET PASSWORD = PASSWORD('${TLBB_DB_PASS}'); FLUSH PRIVILEGES;" 2>/dev/null || \
+    mysql -uroot -p"$tmp_pw" --connect-expired-password </dev/null \
+        -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${TLBB_DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || \
         { warn "临时密码重置失败, 请手动检查 MySQL 日志"; }
 }
 
