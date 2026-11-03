@@ -25,9 +25,13 @@ fi
 # 展示环境配置信息 (对齐 gstlenv curgs)
 show_config() {
     echo "=============================================================="
-    echo "  GS游戏享网 | 非 Docker 原生版 (gstlenv 命令体系)"
-    echo "  项目地址: https://github.com/yulinzhihou/gstlenv"
-    echo "             https://gitee.com/yulinzhihou/gstlenv"
+    echo "  GS游享网 | 非 Docker 原生版 (gstlenv 命令体系)"
+    echo "  当前项目 (非 Docker 原生版):"
+    echo "    GitHub: https://github.com/yulinzhihou/gstlenv_non_docker"
+    echo "    Gitee : https://gitee.com/yulinzhihou/gstlenv_non_docker"
+    echo "  参考项目 (Docker 版 gstlenv):"
+    echo "    GitHub: https://github.com/yulinzhihou/gstlenv"
+    echo "    Gitee : https://gitee.com/yulinzhihou/gstlenv"
     echo "--------------------------------------------------------------"
     echo "  版本信息    : v2.8.28 (与 gstlenv 命令/版本一致)"
     echo "  服务端路径  : ${TLBB_PATH:-/tlgame/tlbb}"
