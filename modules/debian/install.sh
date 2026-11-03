@@ -214,11 +214,19 @@ deb_setup_db() {
     local sql_dir
     sql_dir=$(off_get sql tlbbdb.sql 2>/dev/null)
     sql_dir=$(dirname "$sql_dir" 2>/dev/null || echo "$TLBB_OFFLINE_DIR/sql")
-    local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql"
+    local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql" t10="$sql_dir/tlbbdb_10.sql"
     [ -f "$tlbbdb" ] || tlbbdb=$(find / -name "tlbbdb.sql" 2>/dev/null | head -1)
     [ -f "$web" ] || web=$(find / -name "web.sql" 2>/dev/null | head -1)
+    [ -f "$t10" ] || t10=$(find / -name "tlbbdb_10.sql" 2>/dev/null | head -1)
 
-    log "配置 MySQL ${mver} 账号并建库..."
+    # 数据库结构: 3库(新端 tlbbdb_10+tlbbdb_main+web) / 2库(怀旧 tlbbdb+web); 8.0 交互选择, 其余固定 2 库
+    local dblayout="${TLBB_DB_LAYOUT:-3}"
+    local main_db="tlbbdb" need_t10=0
+    if [ "$mver" = "80" ] && [ "$dblayout" = "3" ]; then
+        main_db="tlbbdb_main"; need_t10=1
+    fi
+
+    log "配置 MySQL ${mver} 账号并建库 (${dblayout} 库结构, 主库 ${main_db})..."
     case "$mver" in
         80)
             # MySQL 8.0: root 走 auth_socket/临时密码, 需改 native 认证并卸载密码强度校验
@@ -237,9 +245,13 @@ CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${T
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;
 FLUSH PRIVILEGES;" 2>/dev/null || warn "MySQL 8.0 账号配置失败, 请手动检查 root 认证方式"
+            # 按 2/3 库结构建库
+            if [ "$need_t10" = "1" ]; then
+                mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_main CHARACTER SET utf8; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8; CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8;" 2>/dev/null
+            else
+                mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8;" 2>/dev/null
+            fi
             ;;
         57)
             # MySQL 5.7 (Ubuntu 18): root 走 auth_socket
@@ -261,8 +273,17 @@ FLUSH PRIVILEGES;" 2>/dev/null || warn "MySQL 5.7 账号配置失败"
             ;;
     esac
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
-        mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功"
-        mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功"
+        log "导入初始数据 (${dblayout} 库结构, 主库 ${main_db})..."
+        if [ "$main_db" = "tlbbdb" ]; then
+            mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败"
+        else
+            # 3 库模式: 主库物理名为 tlbbdb_main, 改写 tlbbdb.sql 的 CREATE DATABASE/USE 头后导入
+            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败"
+        fi
+        mysql -uroot -p"${TLBB_DB_PASS}" web < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
+        if [ "$need_t10" = "1" ] && [ -f "$t10" ]; then
+            mysql -uroot -p"${TLBB_DB_PASS}" tlbbdb_10 < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
+        fi
     else
         warn "未找到离线 SQL 文件, 跳过导入 (可使用 Navicat 手动导入 offline/sql/)"
     fi
@@ -305,9 +326,16 @@ deb_config_odbc() {
         [ -f "$c" ] && { drvpath="$c"; break; }
     done
     [ -z "$drvpath" ] && drvpath="/usr/lib/i386-linux-gnu/libmyodbc3.so"
-    # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10
-    local game_db="tlbbdb"
-    if ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
+    # 按 2/3 库结构决定主库名与是否含 tlbbdb_10 (与建库一致)
+    local mver; mver=$(select_mysql_version)
+    local dblayout="${TLBB_DB_LAYOUT:-3}"
+    local main_db="tlbbdb" has_t10=0
+    if [ "$mver" = "80" ] && [ "$dblayout" = "3" ]; then
+        main_db="tlbbdb_main"; has_t10=1
+    fi
+    # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10 (仅 3 库结构)
+    local game_db="$main_db"
+    if [ "$has_t10" = "1" ] && ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
         game_db="tlbbdb_10"
         log "检测到武道四 v3 端 (luoluo 目录), 启用四段 DSN 映射"
     fi
@@ -319,7 +347,7 @@ SERVER          = 127.0.0.1
 PORT            = 3306
 USER            = root
 Password        = ${TLBB_DB_PASS}
-Database        = tlbbdb
+Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
 
@@ -334,6 +362,9 @@ Database        = ${game_db}
 OPTION          = 3
 SOCKET          =
 
+INI
+    if [ "$has_t10" = "1" ]; then
+        cat >> /etc/odbc.ini <<INI
 [tlbbdb_10]
 Driver          = $drvpath
 Description     = TLBB Game DB (动态库)
@@ -345,6 +376,9 @@ Database        = tlbbdb_10
 OPTION          = 3
 SOCKET          =
 
+INI
+    fi
+    cat >> /etc/odbc.ini <<INI
 [CHAR_DBTABASE]
 Driver          = $drvpath
 Description     = TLBB Char DB
@@ -352,7 +386,7 @@ SERVER          = 127.0.0.1
 PORT            = 3306
 USER            = root
 Password        = ${TLBB_DB_PASS}
-Database        = tlbbdb
+Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
 INI
@@ -381,8 +415,10 @@ deb_verify() {
         [ "$missing" = "0" ] && { info "  [OK] 驱动依赖完整"; ok=$((ok+1)); } || warn "  [!!] 驱动缺少 ${missing} 个依赖"
     fi
     local t
-    t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb; show tables;" 2>/dev/null | wc -l)
-    [ "$t" -gt 0 ] && { info "  [OK] tlbbdb 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb 无表"
+    local main_db="tlbbdb"
+    [ "$(select_mysql_version)" = "80" ] && [ "${TLBB_DB_LAYOUT:-3}" = "3" ] && main_db="tlbbdb_main"
+    t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use ${main_db}; show tables;" 2>/dev/null | wc -l)
+    [ "$t" -gt 0 ] && { info "  [OK] ${main_db} 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] ${main_db} 无表"
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1
 }

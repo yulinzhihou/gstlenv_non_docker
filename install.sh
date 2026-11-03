@@ -373,6 +373,10 @@ main() {
 
     # MySQL 档位选择 (对齐 gstlenv 环境编号菜单, 可 TLBB_MYSQL_VERSION 预置)
     ask_mysql_version
+    # 数据库结构选择 (8.0/8.4 询问 3库/2库, 可 TLBB_DB_LAYOUT 预置; fedora 无建库环节, 不询问)
+    if [ "$SYS_FAMILY" = "rhel" ] || [ "$SYS_FAMILY" = "debian" ]; then
+        ask_db_layout "$(select_mysql_version)"
+    fi
 
     if [ -z "$TLBB_OFFLINE_DIR" ]; then
         TLBB_OFFLINE_DIR="$PKG_ROOT/offline"

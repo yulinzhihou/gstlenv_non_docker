@@ -598,10 +598,12 @@ rhel_handle_first_boot() {
 # 每份 sql 自带 CREATE DATABASE IF NOT EXISTS + USE 头, 直接导入即可
 rhel_setup_db() {
     local mver; mver=$(select_mysql_version)
-    local sql_dir="$TLBB_OFFLINE_DIR/sql/mysql${mver}"
+    # 8.4 复用 8.0 的 SQL 包 (utf8mb4/DYNAMIC 一致)
+    local sqldir_ver="mysql${mver}"; [ "$mver" = "84" ] && sqldir_ver="mysql80"
+    local sql_dir="$TLBB_OFFLINE_DIR/sql/${sqldir_ver}"
     if [ ! -d "$sql_dir" ]; then
-        sql_dir=$(dirname "$(off_get "sql/mysql${mver}" tlbbdb.sql 2>/dev/null)" 2>/dev/null || true)
-        [ -d "$sql_dir" ] || sql_dir="$TLBB_OFFLINE_DIR/sql/mysql${mver}"
+        sql_dir=$(dirname "$(off_get "sql/${sqldir_ver}" tlbbdb.sql 2>/dev/null)" 2>/dev/null || true)
+        [ -d "$sql_dir" ] || sql_dir="$TLBB_OFFLINE_DIR/sql/${sqldir_ver}"
     fi
     local tlbbdb="$sql_dir/tlbbdb.sql" web="$sql_dir/web.sql" t10="$sql_dir/tlbbdb_10.sql"
     [ -f "$tlbbdb" ] || tlbbdb=$(find "$TLBB_OFFLINE_DIR/sql" -name "tlbbdb.sql" 2>/dev/null | head -1)
@@ -609,7 +611,14 @@ rhel_setup_db() {
 
     rhel_handle_first_boot
 
-    log "配置 MySQL ${mver} 账号并建库..."
+    # 数据库结构: 3库(新端 tlbbdb_10+tlbbdb_main+web) / 2库(怀旧 tlbbdb+web); 8.0/8.4 交互选择, 其余固定 2 库
+    local dblayout="${TLBB_DB_LAYOUT:-3}"
+    local main_db="tlbbdb" need_t10=0
+    if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "$dblayout" = "3" ]; then
+        main_db="tlbbdb_main"; need_t10=1
+    fi
+
+    log "配置 MySQL ${mver} 账号并建库 (${dblayout} 库结构, 主库 ${main_db})..."
     case "$mver" in
         80|84)
             # MySQL 8.0/8.4: 卸载密码强度组件 + 强制 native 认证 (兼容 ODBC 3.51/老驱动)
@@ -622,18 +631,18 @@ CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${T
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
 CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
-CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null || \
             { warn "MySQL ${mver} 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
-CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
-CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
-CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null; }
+            # 按 2/3 库结构建库
+            if [ "$need_t10" = "1" ]; then
+                mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_main CHARACTER SET utf8mb4; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4; CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;" 2>/dev/null
+            else
+                mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4; CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;" 2>/dev/null
+            fi
             ;;
         57)
             # MySQL 5.7: ALTER USER native 认证
@@ -667,25 +676,39 @@ FLUSH PRIVILEGES;" 2>/dev/null; }
     # 确保 root 密码生效 (MySQL 8.0 空密码时创建后再次确认)
     if [ "$mver" = "80" ] || [ "$mver" = "84" ] || [ "$mver" = "57" ]; then
         local cs="utf8mb4"
-        mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS web CHARACTER SET ${cs};" 2>/dev/null
-        { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET ${cs};" 2>/dev/null
+        if [ "$need_t10" = "1" ]; then
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_main CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS web CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET ${cs};" 2>/dev/null
+        else
+            mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS web CHARACTER SET ${cs};" 2>/dev/null
+        fi
     fi
     # 导入初始数据 (包内自带 CREATE DATABASE/USE, 直接导入; 字符集按档位)
     local cs_opt="utf8"; [ "$mver" = "57" ] || [ "$mver" = "80" ] || [ "$mver" = "84" ] && cs_opt="utf8mb4"
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
-        log "导入初始数据 (MySQL ${mver}: $sql_dir, 字符集 ${cs_opt})..."
-        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
+        log "导入初始数据 (MySQL ${mver}: $sql_dir, 字符集 ${cs_opt}, ${dblayout} 库结构)..."
+        if [ "$main_db" = "tlbbdb" ]; then
+            mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
+        else
+            # 3 库模式: 主库物理名为 tlbbdb_main, 改写 tlbbdb.sql 的 CREATE DATABASE/USE 头后导入
+            sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb\b/CREATE DATABASE IF NOT EXISTS tlbbdb_main/g; s/^USE tlbbdb;/USE tlbbdb_main;/g' "$tlbbdb" | mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" 2>/dev/null && log "tlbbdb_main 导入成功" || warn "tlbbdb_main 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
+        fi
         mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
-        if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ -f "$t10" ]; then
+        if [ "$need_t10" = "1" ] && [ -f "$t10" ]; then
             mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
         fi
     else
         warn "未找到离线 SQL 文件, 跳过自动导入"
-        warn "在线模式下请手动导入: 将 tlbbdb.sql / web.sql / tlbbdb_10.sql 上传到服务器后执行:"
-        warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb.sql"
-        warn "  mysql -uroot -p${TLBB_DB_PASS} < web.sql"
-        warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb_10.sql"
-        warn "SQL 文件位置参考: offline/sql/mysql${mver}/ 目录"
+        if [ "$need_t10" = "1" ]; then
+            warn "在线模式下请手动导入: 将 tlbbdb.sql / web.sql / tlbbdb_10.sql 上传到服务器后执行:"
+            warn "  sed 's/CREATE DATABASE IF NOT EXISTS tlbbdb;/CREATE DATABASE IF NOT EXISTS tlbbdb_main;/; s/^USE tlbbdb;/USE tlbbdb_main;/' tlbbdb.sql | mysql -uroot -p${TLBB_DB_PASS}"
+            warn "  mysql -uroot -p${TLBB_DB_PASS} < web.sql"
+            warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb_10.sql"
+        else
+            warn "在线模式下请手动导入: 将 tlbbdb.sql / web.sql 上传到服务器后执行:"
+            warn "  mysql -uroot -p${TLBB_DB_PASS} < tlbbdb.sql"
+            warn "  mysql -uroot -p${TLBB_DB_PASS} < web.sql"
+        fi
+        warn "SQL 文件位置参考: offline/sql/${sqldir_ver}/ 目录"
     fi
 }
 
@@ -798,9 +821,16 @@ rhel_config_odbc() {
         [ -f "$c" ] && { drvpath="$c"; break; }
     done
     [ -z "$drvpath" ] && drvpath="/usr/lib/libmyodbc3.so"
-    # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10
-    local game_db="tlbbdb"
-    if ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
+    # 按 2/3 库结构决定主库名与是否含 tlbbdb_10 (与建库一致)
+    local mver; mver=$(select_mysql_version)
+    local dblayout="${TLBB_DB_LAYOUT:-3}"
+    local main_db="tlbbdb" has_t10=0
+    if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "$dblayout" = "3" ]; then
+        main_db="tlbbdb_main"; has_t10=1
+    fi
+    # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10 (仅 3 库结构)
+    local game_db="$main_db"
+    if [ "$has_t10" = "1" ] && ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
         game_db="tlbbdb_10"
         log "检测到武道四 v3 端 (luoluo 目录), 启用四段 DSN 映射"
     fi
@@ -812,7 +842,7 @@ SERVER          = 127.0.0.1
 PORT            = 3306
 USER            = root
 Password        = ${TLBB_DB_PASS}
-Database        = tlbbdb
+Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
 
@@ -827,6 +857,9 @@ Database        = ${game_db}
 OPTION          = 3
 SOCKET          =
 
+INI
+    if [ "$has_t10" = "1" ]; then
+        cat >> /etc/odbc.ini <<INI
 [tlbbdb_10]
 Driver          = $drvpath
 Description     = TLBB Game DB (动态库)
@@ -838,6 +871,9 @@ Database        = tlbbdb_10
 OPTION          = 3
 SOCKET          =
 
+INI
+    fi
+    cat >> /etc/odbc.ini <<INI
 [CHAR_DBTABASE]
 Driver          = $drvpath
 Description     = TLBB Char DB
@@ -845,7 +881,7 @@ SERVER          = 127.0.0.1
 PORT            = 3306
 USER            = root
 Password        = ${TLBB_DB_PASS}
-Database        = tlbbdb
+Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
 INI
@@ -878,13 +914,19 @@ rhel_verify() {
         ok=$((ok+1))
     fi
     command -v isql >/dev/null 2>&1 && { info "  [OK] unixODBC isql 可用"; ok=$((ok+1)); }
+    # 按 2/3 库结构验证主库与 tlbbdb_10 (与建库一致)
+    local mver; mver=$(select_mysql_version)
+    local main_db="tlbbdb"
+    { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "${TLBB_DB_LAYOUT:-3}" = "3" ] && main_db="tlbbdb_main"
     local t
-    t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb; show tables;" 2>/dev/null | wc -l)
-    [ "$t" -gt 0 ] && { info "  [OK] tlbbdb 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb 无表(需手动导入)"
-    if [ "$(select_mysql_version)" = "80" ] || [ "$(select_mysql_version)" = "84" ]; then
-        local t10
-        t10=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb_10; show tables;" 2>/dev/null | wc -l)
-        [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"
+    t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use ${main_db}; show tables;" 2>/dev/null | wc -l)
+    [ "$t" -gt 0 ] && { info "  [OK] ${main_db} 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] ${main_db} 无表(需手动导入)"
+    if [ "$mver" = "80" ] || [ "$mver" = "84" ]; then
+        if [ "${TLBB_DB_LAYOUT:-3}" = "3" ]; then
+            local t10
+            t10=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb_10; show tables;" 2>/dev/null | wc -l)
+            [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"
+        fi
     fi
     info "验证: ${ok}/4 通过"
     [ "$ok" -ge 3 ] && return 0 || return 1

@@ -238,6 +238,50 @@ ask_optional_component() {
     esac
 }
 
+# ---------- 数据库结构选择 (MySQL 8.0/8.4: 3库 新端 / 2库 怀旧端) ----------
+# 3 库 (新端/64位源端标准): tlbbdb_10 + tlbbdb_main + web
+# 2 库 (怀旧/经典端标准):   tlbbdb + web
+# 设置 TLBB_DB_LAYOUT=3|2; 可预置 TLBB_DB_LAYOUT, 非交互/无终端默认 3 库
+ask_db_layout() {
+    local mver="$1"
+    # 仅 8.0/8.4 需要询问; 其余档位固定 2 库
+    if [ "$mver" != "80" ] && [ "$mver" != "84" ]; then
+        TLBB_DB_LAYOUT="2"
+        return 0
+    fi
+    # 环境变量预置
+    if [ "$TLBB_DB_LAYOUT" = "3" ] || [ "$TLBB_DB_LAYOUT" = "2" ]; then
+        log "数据库结构: ${TLBB_DB_LAYOUT} 库 (预置 TLBB_DB_LAYOUT)"
+        return 0
+    fi
+    # 非交互模式: 默认 3 库
+    if [ "$TLBB_NONINTERACTIVE" = "1" ]; then
+        TLBB_DB_LAYOUT="3"
+        warn "非交互模式, 数据库结构默认 3 库 (tlbbdb_10+tlbbdb_main+web, 可 TLBB_DB_LAYOUT=2 覆盖为 2 库)"
+        return 0
+    fi
+    # 检测 stdin 是否为终端 (curl | bash 管道模式), 无终端则默认 3 库
+    local __read_src
+    if [ -t 0 ]; then
+        __read_src=""
+    elif [ -r /dev/tty ]; then
+        __read_src="< /dev/tty"
+    else
+        TLBB_DB_LAYOUT="3"
+        warn "检测到非交互模式, 数据库结构默认 3 库 (tlbbdb_10+tlbbdb_main+web)"
+        return 0
+    fi
+    echo -e "${CGREEN}数据库结构选择${CEND}"
+    echo "  3 库 (新端/64位源端标准): tlbbdb_10 + tlbbdb_main + web"
+    echo "  2 库 (怀旧/经典端标准):   tlbbdb + web"
+    eval "read -e -p \"请输入 [3/2, 回车=3]: \" __layout $__read_src"
+    case "$__layout" in
+        2|3) TLBB_DB_LAYOUT="$__layout";;
+        *)   TLBB_DB_LAYOUT="3";;
+    esac
+    log "数据库结构: ${TLBB_DB_LAYOUT} 库"
+}
+
 # ---------- 国内源可用性探测 ----------
 # 返回第一个可用的镜像基础 URL
 probe_mirror() {

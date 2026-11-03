@@ -75,7 +75,7 @@
 curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
 ```
 
-> 安装过程：自动检测 root → 下载源码到 `/root/.tlgame` → 识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ 导入 tlbbdb/web → 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
+> 安装过程：自动检测 root → 下载源码到 `/root/.tlgame` → 识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ **8.0+ 交互选择数据库结构（3库=tlbbdb_10+tlbbdb_main+web 新端 / 2库=tlbbdb+web 怀旧端，回车=3库）** → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ 按所选结构建库并导入 → 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
 >
 > 可选参数：
 > - 指定数据库密码：`... | bash -s -- --dbpass 你的密码`
@@ -90,7 +90,7 @@ cd /root/src
 bash install.sh
 ```
 
-> 安装过程自动完成：识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ 导入 tlbbdb/web → 可选组件（nginx/php/redis，回车=不装）→ 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
+> 安装过程自动完成：识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ **8.0+ 交互选择数据库结构（3库=tlbbdb_10+tlbbdb_main+web 新端 / 2库=tlbbdb+web 怀旧端）** → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ 按所选结构建库并导入 → 可选组件（nginx/php/redis，回车=不装）→ 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
 
 - 第 2 步：**如果想使用默认配置（默认的端口，默认的数据库密码 123456 等），可以跳过此步骤**
 
