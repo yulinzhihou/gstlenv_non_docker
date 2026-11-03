@@ -123,7 +123,9 @@ EOF
 # ---------- 安装数据库 ----------
 deb_install_db() {
     local mver; mver=$(select_mysql_version)
-    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80 覆盖)"
+    # Debian/Ubuntu apt 无 MySQL 8.4 包 (仅 8.0), 预置 84 时按 8.0 处理
+    [ "$mver" = "84" ] && { warn "Debian/Ubuntu apt 无 MySQL 8.4 包, 按 8.0 安装"; mver="80"; }
+    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80|84 覆盖)"
     # 离线模式: 优先版本专属目录 (v5: debian11/12 用 MySQL 官方 apt mysql-community 全套)
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
         local subdir=""

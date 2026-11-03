@@ -21,6 +21,7 @@
 # ------------------------------------------------------------
 # 用法:
 #   bash scripts/download_offline.sh el8 mysql80    # el8 + MySQL 8.0
+#   bash scripts/download_offline.sh el10 mysql84   # el10 + MySQL 8.4 (官方 8.0 无 el10 包)
 #   bash scripts/download_offline.sh el7 mysql57    # el7 + MySQL 5.7
 #   bash scripts/download_offline.sh el7 mysql51    # el7 + MySQL 5.1
 #   bash scripts/download_offline.sh el6 mysql51    # el6 + MySQL 5.1
@@ -80,7 +81,12 @@ fetch_rpm_from_repo() {
 
 # ---------- 下载 RHEL 系离线包 ----------
 dl_rhel() {
-    local branch="$1" mver="$2"   # el5|el6|el7|el8|el9, 51|57|80
+    local branch="$1" mver="$2"   # el5|el6|el7|el8|el9|el10, 51|57|80|84
+    # el10 官方 8.0 无包, 仅 MySQL 8.4 (AppStream 亦为 mysql8.4-*); 未指定时按分支默认
+    if [ "$branch" = "el10" ]; then
+        [ "$mver" = "auto" ] && mver="84"
+        [ "$mver" != "84" ] && die "el10 仅支持 MySQL 8.4 (官方 8.0 无 el10 包), 请使用 mysql84"
+    fi
     local outdir="$OFFLINE/rpm-packages/${branch}/mysql${mver}"
     mkdir -p "$outdir"
     case "$branch" in
@@ -135,7 +141,8 @@ dl_rhel() {
             fi
             ;;
         el8|el9|el10)
-            # MySQL 8.0: 发行版 AppStream (el8 已 EOL 走 vault)
+            # MySQL: 发行版 AppStream (el8 已 EOL 走 vault; el9 为 mysql-server 8.0;
+            # el10 为 mysql8.4-* 8.4 LTS)
             local bases=()
             case "$branch" in
                 el8)  bases+=("https://mirrors.aliyun.com/centos-vault/8-stream/AppStream/x86_64/os" "https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/x86_64/os");;
@@ -149,7 +156,7 @@ dl_rhel() {
                 n=$(fetch_rpm_from_repo "$b" "$mf" "$outdir") && break
                 warn "镜像不可用: $b, 尝试下一个"
             done
-            [ -n "$n" ] && log "${branch} MySQL 8.0 rpm 下载 ${n} 个到 $outdir" || warn "${branch} 全部镜像失败"
+            [ -n "$n" ] && log "${branch} MySQL ${mver} rpm 下载 ${n} 个到 $outdir" || warn "${branch} 全部镜像失败"
             ;;
     esac
 }
@@ -328,7 +335,7 @@ dl_fedora_full() {
 }
 
 # ---------- 主入口 ----------
-[ $# -lt 1 ] && { echo "用法: download_offline.sh [--full] <el5|el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12|fedora34~38> [51|57|80]"; exit 1; }
+[ $# -lt 1 ] && { echo "用法: download_offline.sh [--full] <el5|el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12|fedora34~38> [51|57|80|84]"; exit 1; }
 FULL=""
 [ "$1" = "--full" ] && { FULL=1; shift; }
 MVER="${2:-auto}"; MVER="${MVER#mysql}"   # 兼容 mysql80/80 两种写法

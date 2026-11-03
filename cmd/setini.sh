@@ -202,9 +202,9 @@ SOCKET		=
 EOF
 
 # 生成 billing config.yaml (原生: /home/billing, 与 run.sh 中的路径一致)
-# bill_type 0经典 1怀旧 (MySQL 8.0 源端视为怀旧/64位)
+# bill_type 0经典 1怀旧 (MySQL 8.0/8.4 源端视为怀旧/64位)
 BILLING_GAME_SRC=0
-if [ "${TLBB_MYSQL_VERSION:-auto}" = "80" ]; then
+if [ "${TLBB_MYSQL_VERSION:-auto}" = "80" ] || [ "${TLBB_MYSQL_VERSION:-auto}" = "84" ]; then
     BILLING_GAME_SRC=1
 fi
 cat >/home/billing/config.yaml <<EOF

@@ -28,7 +28,7 @@ TLBB_NONINTERACTIVE="${TLBB_NONINTERACTIVE:-0}"  # 非交互模式(用环境变�
 #   MySQL 本机 3306 (gstlenv 对外映射 33061)
 #   服务端端口沿用 gstlenv 容器内端口: Login 13580 / Server 15680 / Billing 21818
 # ============================================================
-TLBB_MYSQL_VERSION="${TLBB_MYSQL_VERSION:-auto}"   # auto|51|57|80 (自动按系统选择)
+TLBB_MYSQL_VERSION="${TLBB_MYSQL_VERSION:-auto}"   # auto|51|57|80|84 (自动按系统选择)
 TLBB_MYSQL_PORT="${TLBB_MYSQL_PORT:-3306}"         # 本机 MySQL 监听端口
 TLBB_MYSQL_USER="${TLBB_MYSQL_USER:-gs}"           # 游戏数据库账号 (gstlenv: TL_MYSQL_USER=gs)
 TLBB_MYSQL_PASSWORD="${TLBB_MYSQL_PASSWORD:-123456}" # 游戏账号密码 (gstlenv: TL_MYSQL_PASSWORD=123456)
@@ -42,8 +42,8 @@ TLBB_TZ="${TLBB_TZ:-Asia/Shanghai}"                # 时区 (gstlenv: TZ=Asia/Sh
 
 # ---------- MySQL 版本选择 (对齐 gstlenv 环境编号体系) ----------
 # gstlenv 编号: 1=CentOS6+MySQL5.1  2=CentOS7+MySQL5.1
-#               3=CentOS7+MySQL5.7  4=CentOS9+MySQL8.0
-# 输出: 51|57|80
+#               3=CentOS7+MySQL5.7  4=CentOS9+MySQL8.0  5=el10+MySQL8.4
+# 输出: 51|57|80|84
 select_mysql_version() {
     if [ -n "$TLBB_MYSQL_VERSION" ] && [ "$TLBB_MYSQL_VERSION" != "auto" ]; then
         echo "$TLBB_MYSQL_VERSION"; return 0
@@ -52,7 +52,8 @@ select_mysql_version() {
         rhel:el5|rhel:el6)  echo "51";;   # 老 RHEL → MySQL 5.1
         rhel:el7)           echo "51";;   # el7 默认 5.1 (兼容老端), 可 TLBB_MYSQL_VERSION=57 指定
         rhel:el8)           echo "80";;   # el8: MySQL 5.7 无官方 el8 包, 只能 8.0
-        rhel:el9|rhel:el10) echo "80";;   # 新系统 → MySQL 8.0
+        rhel:el9)           echo "80";;   # el9 → MySQL 8.0 (官方 el9 有 8.0 包)
+        rhel:el10)          echo "84";;   # el10 → MySQL 8.4 (官方 8.0 无 el10 包, 8.4 为 el10 LTS)
         debian:ubuntu)
             case "$SYS_VERSION_ID" in
                 12*|13*|14*|15*|16*) echo "51";;  # Ubuntu 12-16 → 系统自带 MySQL 5.5/5.6

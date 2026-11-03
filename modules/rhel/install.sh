@@ -134,50 +134,74 @@ rhel_install_compat() {
     log "32 位兼容库安装完成"
 }
 
-# ---------- 配置 MySQL 官方 yum 源 ----------
-# 注意: MySQL 5.7 官方只提供 el6/el7 包(无 el8); MySQL 8.0 提供 el8/el9
-# 国内镜像(阿里云/华为云/腾讯云)只有 MySQL 发行包镜像, 无 yum 仓库结构,
-# 因此按"逐镜像探测具体 repomd.xml"决定 base, 全部不可达时用官方 repo.mysql.com
+# ---------- 配置 MySQL yum 源 (官方/国内镜像, 兼容嵌套与扁平目录) ----------
+# 注意: 各版本官方包覆盖范围不同:
+#   MySQL 5.7 官方仅 el6/el7 (无 el8+); MySQL 8.0 官方 el6/7/8/9 (无 el10);
+#   MySQL 8.4 官方 el7/8/9/10 (el10 新系统首选 8.4).
+# 目录结构: 官方 repo.mysql.com 为嵌套 mysql-8.4-community/el/10/x86_64,
+#   国内镜像(清华 TUNA/腾讯云/阿里云) 为扁平 mysql-8.4-community-el10-x86_64,
+#   探测时两种路径都试, 命中后按同风格写 repo (gpgcheck=0 便于内网/离线).
 rhel_config_mysql_repo() {
-    # $1: 57|80
+    # $1: 51|57|80|84
     local ver="$1" rel="${SYS_BRANCH#el}"
     [ -z "$rel" ] && rel="7"
-    # 防御: MySQL 5.7 无 el8 包, 自动改 8.0
-    if [ "$ver" = "57" ] && { [ "$rel" = "8" ] || [ "$rel" = "9" ] || [ "$rel" = "10" ]; }; then
-        warn "MySQL 5.7 无官方 el${rel} 包, 自动切换 MySQL 8.0"
-        ver="80"
+    # 防御: 版本在当前系统无官方包时自动切换
+    if [ "$ver" = "57" ]; then
+        case "$rel" in
+            8|9)  warn "MySQL 5.7 无官方 el${rel} 包, 自动切换 MySQL 8.0"; ver="80";;
+            10)   warn "MySQL 5.7 无官方 el${rel} 包, 自动切换 MySQL 8.4"; ver="84";;
+        esac
     fi
+    if [ "$ver" = "80" ] && [ "$rel" = "10" ]; then
+        warn "MySQL 8.0 无官方 el10 包 (官方 8.0 仅提供 el6/7/8/9), 自动切换 MySQL 8.4"
+        ver="84"
+    fi
+    local nv; case "$ver" in 51) nv="5.1";; 57) nv="5.7";; 80) nv="8.0";; 84) nv="8.4";; *) nv="$ver";; esac
     local arch; arch=$(uname -m)
     [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
-    local base=""
-    for dom in "https://repo.mysql.com" "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql" "https://mirrors.cloud.tencent.com/mysql"; do
-        if curl -sI --connect-timeout 5 --max-time 8 "${dom}/yum/mysql-${ver}-community/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
-            base="$dom"; break
+    local base="" style=""
+    for dom in "https://repo.mysql.com" "https://mirrors.tuna.tsinghua.edu.cn/mysql" "https://mirrors.cloud.tencent.com/mysql" "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql"; do
+        if curl -sI --connect-timeout 5 --max-time 8 "${dom}/yum/mysql-${nv}-community/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
+            base="$dom"; style="nested"; break
+        fi
+        if curl -sI --connect-timeout 5 --max-time 8 "${dom}/yum/mysql-${nv}-community-el${rel}-${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
+            base="$dom"; style="flat"; break
         fi
     done
-    [ -z "$base" ] && { warn "MySQL ${ver} 官方 yum 源均不可达, 请检查网络或改用离线包"; return 1; }
-    log "MySQL ${ver} yum 源: $base (el${rel}/${arch})"
+    [ -z "$base" ] && { warn "MySQL ${nv} yum 源均不可达, 请检查网络或改用离线包"; return 1; }
+    log "MySQL ${nv} yum 源: $base (${style}, el${rel}/${arch})"
+    local mainurl
+    if [ "$style" = "flat" ]; then
+        mainurl="${base}/yum/mysql-${nv}-community-el${rel}/\$basearch/"
+    else
+        mainurl="${base}/yum/mysql-${nv}-community/el/${rel}/\$basearch/"
+    fi
     cat > /etc/yum.repos.d/mysql-community.repo <<REPO
-# MySQL Community Server ${ver} (由 TLBB 万能环境安装器生成)
+# MySQL Community Server ${nv} (由 TLBB 万能环境安装器生成)
 [mysql${ver}-community]
-name=MySQL ${ver} Community Server
-baseurl=${base}/yum/mysql-${ver}-community/el/${rel}/\$basearch/
+name=MySQL ${nv} Community Server
+baseurl=${mainurl}
 enabled=1
 gpgcheck=0
 REPO
-    # 8.0 依赖 mysql-tools / mysql-connectors 公共源 (部分 libs 包)
-    if [ "$ver" = "80" ]; then
+    # 8.0/8.4 依赖 mysql-tools / mysql-connectors 公共源 (部分 libs 包)
+    if [ "$ver" = "80" ] || [ "$ver" = "84" ]; then
         for extra in mysql-tools-community mysql-connectors-community; do
-            if curl -sI --connect-timeout 5 --max-time 8 "${base}/yum/${extra}/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1; then
-                cat >> /etc/yum.repos.d/mysql-community.repo <<REPO
+            local extraurl=""
+            if [ "$style" = "flat" ]; then
+                curl -sI --connect-timeout 5 --max-time 8 "${base}/yum/${extra}-el${rel}-${arch}/repodata/repomd.xml" >/dev/null 2>&1 && extraurl="${base}/yum/${extra}-el${rel}/\$basearch/"
+            else
+                curl -sI --connect-timeout 5 --max-time 8 "${base}/yum/${extra}/el/${rel}/${arch}/repodata/repomd.xml" >/dev/null 2>&1 && extraurl="${base}/yum/${extra}/el/${rel}/\$basearch/"
+            fi
+            [ -n "$extraurl" ] || continue
+            cat >> /etc/yum.repos.d/mysql-community.repo <<REPO
 
 [${extra}]
 name=MySQL ${extra}
-baseurl=${base}/yum/${extra}/el/${rel}/\$basearch/
+baseurl=${extraurl}
 enabled=1
 gpgcheck=0
 REPO
-            fi
         done
     fi
     local m; m=$(rhel_pkgmgr)
@@ -195,18 +219,21 @@ rhel_download_mysql_rpm() {
     arch=$(uname -m); [ "$arch" = "x86_64" ] || [ "$arch" = "amd64" ] || arch="x86_64"
     # 已装则直接跳过 (重跑安装器时不重复下载)
     rpm -q mysql-community-server >/dev/null 2>&1 && { log "MySQL ${ver} 已安装, 跳过 rpm 直下"; return 0; }
-    # MySQL 官方源目录结构已变更: 新路径 mysql-8.0-community/el/N/arch (2024+),
-    # 老路径 mysql80-community/el/N/arch / mysql80-community-elN-arch 部分环境仍有效.
-    # 逐路径探测 repodata, 选第一个可达的 base (el9 实测: mysql-8.0-community/el/9/x86_64 200).
-    local nv; case "$ver" in 57) nv="5.7";; 80) nv="8.0";; *) nv="$ver";; esac
-    local base=""
-    for b in \
-        "https://repo.mysql.com/yum/mysql-${nv}-community/el/${rel}/${arch}" \
-        "https://repo.mysql.com/yum/mysql${ver}-community/el/${rel}/${arch}" \
-        "https://repo.mysql.com/yum/mysql${ver}-community-el${rel}-${arch}"; do
-        if curl -s --connect-timeout 8 --max-time 20 -o /dev/null -w "%{http_code}" "$b/repodata/repomd.xml" | grep -q "^200"; then
-            base="$b"; break
-        fi
+    # 目录结构: 官方/镜像均可能为嵌套 (mysql-8.0-community/el/N/arch) 或扁平
+    # (mysql-8.0-community-elN-arch, 清华/腾讯/阿里镜像), 老路径 mysql80-community
+    # 部分环境仍有效. 逐域名×逐路径探测 repodata, 选第一个可达的 base.
+    local nv; case "$ver" in 51) nv="5.1";; 57) nv="5.7";; 80) nv="8.0";; 84) nv="8.4";; *) nv="$ver";; esac
+    local base="" dom b
+    for dom in "https://repo.mysql.com" "https://mirrors.tuna.tsinghua.edu.cn/mysql" "https://mirrors.cloud.tencent.com/mysql" "https://mirrors.aliyun.com/mysql" "https://repo.huaweicloud.com/mysql"; do
+        for b in \
+            "${dom}/yum/mysql-${nv}-community/el/${rel}/${arch}" \
+            "${dom}/yum/mysql-${nv}-community-el${rel}-${arch}" \
+            "${dom}/yum/mysql${ver}-community/el/${rel}/${arch}" \
+            "${dom}/yum/mysql${ver}-community-el${rel}-${arch}"; do
+            if curl -s --connect-timeout 8 --max-time 20 -o /dev/null -w "%{http_code}" "$b/repodata/repomd.xml" | grep -q "^200"; then
+                base="$b"; break 2
+            fi
+        done
     done
     [ -z "$base" ] && { warn "所有 MySQL 源路径均不可达 (repodata 探测失败)"; return 1; }
     log "MySQL 源路径命中: $base"
@@ -273,7 +300,7 @@ rhel_fallback_offline_rpm() {
 # ---------- 安装数据库 ----------
 rhel_install_db() {
     local mver; mver=$(select_mysql_version)
-    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80 覆盖)"
+    log "数据库方案: MySQL ${mver} (可 TLBB_MYSQL_VERSION=51|57|80|84 覆盖)"
     # 离线模式: 优先本地 rpm 包目录 (rpm-packages/<branch>/mysql<ver>/)
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
         local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
@@ -365,16 +392,33 @@ rhel_install_db() {
         80)
             log "安装 MySQL 8.0 (官方源)..."
             local rel8; rel8="${SYS_BRANCH#el}"
-            # el9+ (CentOS Stream 9 / RHEL9+ / Rocky/Alma 9): 系统 AppStream 自带 MySQL 8.0 包,
+            # el10: 官方 8.0 无 el10 包, 自动改用 MySQL 8.4 (LTS) 安装
+            if [ "$rel8" = "10" ]; then
+                warn "MySQL 8.0 无官方 el10 包 (官方 8.0 仅提供 el6/7/8/9), 自动改用 MySQL 8.4"
+                if ! rhel_config_mysql_repo 84 || ! rhel_pkg_install mysql-community-server; then
+                    rhel_download_mysql_rpm 84 "$rel8" || \
+                    rhel_fallback_offline_rpm || die "MySQL 8.4 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
+                fi
+            # el9 (CentOS Stream 9 / RHEL9+ / Rocky/Alma 9): 系统 AppStream 自带 MySQL 8.0 包,
             # 官方源 el9 目录结构已变更易 404, 优先走系统源 (实测 CentOS Stream 9 mysql-server=8.0.46)
-            if [ "$rel8" -ge 9 ] 2>/dev/null && rhel_pkg_install mysql-server; then
+            elif [ "$rel8" -ge 9 ] 2>/dev/null && rhel_pkg_install mysql-server; then
                 log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
             elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
                 rhel_download_mysql_rpm 80 "$rel8" || \
                 rhel_fallback_offline_rpm || die "MySQL 8.0 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
             fi
             ;;
-        *) die "不支持的 MySQL 版本: $mver (可选 51|57|80)";;
+        84)
+            log "安装 MySQL 8.4 (官方/国内镜像源)..."
+            local rel84; rel84="${SYS_BRANCH#el}"
+            # el10 (CentOS Stream 10): 官方 8.0 无 el10 包, 8.4 为官方 LTS;
+            # 清华/腾讯/阿里镜像 el10 的 8.4 仓库实测可用, 优先 repo 安装
+            if ! rhel_config_mysql_repo 84 || ! rhel_pkg_install mysql-community-server; then
+                rhel_download_mysql_rpm 84 "$rel84" || \
+                rhel_fallback_offline_rpm || die "MySQL 8.4 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
+            fi
+            ;;
+        *) die "不支持的 MySQL 版本: $mver (可选 51|57|80|84)";;
     esac
     # 装完数据库后禁用 MySQL 官方源: 指纹分流/失效环境会让该源持续 404,
     # 拖累后续所有 dnf 操作 (unixODBC/其他组件安装失败)
@@ -390,7 +434,7 @@ rhel_start_db() {
     local mver; mver=$(select_mysql_version)
     case "$SYS_BRANCH" in
         el5|el6|el7)
-            if [ "$mver" = "80" ] || [ "$mver" = "57" ]; then
+            if [ "$mver" = "80" ] || [ "$mver" = "84" ] || [ "$mver" = "57" ]; then
                 systemctl enable mysqld 2>/dev/null || true
                 systemctl start mysqld 2>/dev/null || service mysqld start 2>/dev/null || \
                     { warn "mysqld 启动失败, 尝试直接运行"; mysqld_safe --user=mysql >/dev/null 2>&1 & sleep 6; }
@@ -504,6 +548,7 @@ rhel_handle_first_boot() {
 #   mysql57/  web.sql + tlbbdb.sql            (utf8mb4, 行格式 DYNAMIC, MySQL 5.7)
 #   mysql80/  web.sql + tlbbdb.sql + tlbbdb_10.sql (utf8mb4, DYNAMIC; 对应 odbc.ini
 #             tlbbdb_main/tlbbdb/CHAR_DBTABASE DSN 的物理库 tlbbdb, tlbbdb_10 DSN 的 tlbbdb_10)
+# MySQL 8.4 与 8.0 的 utf8mb4/DYNAMIC SQL 与认证行为一致, 直接复用 mysql80/ 目录
 # 每份 sql 自带 CREATE DATABASE IF NOT EXISTS + USE 头, 直接导入即可
 rhel_setup_db() {
     local mver; mver=$(select_mysql_version)
@@ -520,8 +565,8 @@ rhel_setup_db() {
 
     log "配置 MySQL ${mver} 账号并建库..."
     case "$mver" in
-        80)
-            # MySQL 8.0: 卸载密码强度组件 + 强制 native 认证 (兼容 ODBC 3.51/老驱动)
+        80|84)
+            # MySQL 8.0/8.4: 卸载密码强度组件 + 强制 native 认证 (兼容 ODBC 3.51/老驱动)
             # 注意: UNINSTALL COMPONENT 对未安装组件会报错并中止 mysql -e, 必须单独执行且忽略失败
             mysql -uroot -p"${TLBB_DB_PASS}" -e "UNINSTALL COMPONENT 'file://component_validate_password';" 2>/dev/null
             mysql -uroot -e "UNINSTALL COMPONENT 'file://component_validate_password';" 2>/dev/null
@@ -535,7 +580,7 @@ CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET utf8mb4;
 CREATE DATABASE IF NOT EXISTS web CHARACTER SET utf8mb4;
 CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET utf8mb4;
 FLUSH PRIVILEGES;" 2>/dev/null || \
-            { warn "MySQL 8.0 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
+            { warn "MySQL ${mver} 账号配置失败, 尝试本地无密登录"; mysql -uroot -e "
 ALTER USER 'root'@'localhost' IDENTIFIED WITH mysql_native_password BY '${TLBB_DB_PASS}';
 CREATE USER IF NOT EXISTS 'gs'@'%' IDENTIFIED WITH mysql_native_password BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'%' WITH GRANT OPTION;
@@ -574,18 +619,18 @@ FLUSH PRIVILEGES;" 2>/dev/null; }
             ;;
     esac
     # 确保 root 密码生效 (MySQL 8.0 空密码时创建后再次确认)
-    if [ "$mver" = "80" ] || [ "$mver" = "57" ]; then
+    if [ "$mver" = "80" ] || [ "$mver" = "84" ] || [ "$mver" = "57" ]; then
         local cs="utf8mb4"
         mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb CHARACTER SET ${cs}; CREATE DATABASE IF NOT EXISTS web CHARACTER SET ${cs};" 2>/dev/null
-        [ "$mver" = "80" ] && mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET ${cs};" 2>/dev/null
+        { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && mysql -uroot -p"${TLBB_DB_PASS}" -e "CREATE DATABASE IF NOT EXISTS tlbbdb_10 CHARACTER SET ${cs};" 2>/dev/null
     fi
     # 导入初始数据 (包内自带 CREATE DATABASE/USE, 直接导入; 字符集按档位)
-    local cs_opt="utf8"; [ "$mver" = "57" ] || [ "$mver" = "80" ] && cs_opt="utf8mb4"
+    local cs_opt="utf8"; [ "$mver" = "57" ] || [ "$mver" = "80" ] || [ "$mver" = "84" ] && cs_opt="utf8mb4"
     if [ -f "$tlbbdb" ] && [ -f "$web" ]; then
         log "导入初始数据 (MySQL ${mver}: $sql_dir, 字符集 ${cs_opt})..."
-        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 offline/sql/mysql${mver}/tlbbdb.sql)"
+        mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$tlbbdb" 2>/dev/null && log "tlbbdb 导入成功" || warn "tlbbdb 导入失败 (请检查 ${sql_dir}/tlbbdb.sql)"
         mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$web" 2>/dev/null && log "web 导入成功" || warn "web 导入失败"
-        if [ "$mver" = "80" ] && [ -f "$t10" ]; then
+        if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ -f "$t10" ]; then
             mysql -uroot -p"${TLBB_DB_PASS}" --default-character-set="$cs_opt" < "$t10" 2>/dev/null && log "tlbbdb_10 导入成功" || warn "tlbbdb_10 导入失败"
         fi
     else
@@ -790,7 +835,7 @@ rhel_verify() {
     local t
     t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb; show tables;" 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] tlbbdb 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb 无表(需手动导入)"
-    if [ "$(select_mysql_version)" = "80" ]; then
+    if [ "$(select_mysql_version)" = "80" ] || [ "$(select_mysql_version)" = "84" ]; then
         local t10
         t10=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb_10; show tables;" 2>/dev/null | wc -l)
         [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"

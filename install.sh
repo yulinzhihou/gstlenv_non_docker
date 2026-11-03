@@ -29,7 +29,7 @@
 # 安装内容:
 #   1) 配置国内安装源 (阿里云/腾讯/华为/163/搜狐/清华, EOL 自动归档)
 #   2) 安装 32 位兼容库 (glibc.i686 等, TLBB 服务端为 32 位进程)
-#   3) 安装数据库 (MySQL 5.1 / 5.7 / 8.0 多档位, 不用 MariaDB)
+#   3) 安装数据库 (MySQL 5.1 / 5.7 / 8.0 / 8.4 多档位, 不用 MariaDB)
 #   4) 安装 unixODBC + MySQL ODBC 驱动 (32 位 + 64 位)
 #   5) 导入 tlbbdb / web 库
 #   6) 部署 gs 原命令名 (untar/setini/runtlbb/... 与 gstlenv 完全一致) + gsctl 统一入口
@@ -158,7 +158,8 @@ ask_mysql_version() {
             rhel:el5|rhel:el6)  echo "51";;
             rhel:el7)           echo "51 57";;
             rhel:el8)           echo "57 80";;
-            rhel:el9|rhel:el10) echo "57 80";;
+            rhel:el9)           echo "57 80";;   # el9: 8.0 官方有包; 5.7 会内部切 8.0
+            rhel:el10)          echo "84";;      # el10: 官方 8.0 无包, 仅 MySQL 8.4 (LTS)
             debian:ubuntu)
                 case "$SYS_VERSION_ID" in
                     12*|13*|14*|15*|16*) echo "51 57";;
@@ -194,6 +195,7 @@ ask_mysql_version() {
             51) ver_desc="MySQL 5.1  (老端标准, 怀旧/经典端兼容)";;
             57) ver_desc="MySQL 5.7  (改引擎端, 兼容性好)";;
             80) ver_desc="MySQL 8.0  (新端标准, 性能更好)";;
+            84) ver_desc="MySQL 8.4  (新端标准, el10 官方 LTS)";;
         esac
         # 标记推荐版本
         if [ "$ver_num" = "$rec_ver" ]; then

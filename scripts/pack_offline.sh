@@ -25,7 +25,8 @@
 # 数据库档位 (不用 MariaDB):
 #   MySQL 5.1 -> el5/el6(yum) el7(内置 MySQL.tar.gz)
 #   MySQL 5.7 -> el7/el8 (官方源: 阿里云/华为云镜像)
-#   MySQL 8.0 -> el8/el9/el10 | Ubuntu 20+ | Debian 10+
+#   MySQL 8.0 -> el8/el9 | Ubuntu 20+ | Debian 10+
+#   MySQL 8.4 -> el10 (官方 8.0 无 el10 包; AppStream 即 mysql8.4-* 8.4 LTS)
 # ------------------------------------------------------------
 export LC_ALL=C
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -63,13 +64,14 @@ pack_builtin() {
 # ---------- 联网生成完整离线包 (数据库+兼容库+驱动, 按 MySQL 版本分目录) ----------
 pack_full() {
     local target="$1"
-    [ -z "$target" ] && { echo "用法: pack_offline.sh --full <el6|el7|el8|el9|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12> [--mysql 51|57|80]"; exit 1; }
+    [ -z "$target" ] && { echo "用法: pack_offline.sh --full <el6|el7|el8|el9|el10|ubuntu18|ubuntu20|ubuntu22|ubuntu24|debian11|debian12> [--mysql 51|57|80|84]"; exit 1; }
     # 可选 --mysql 参数指定版本, 默认按系统自动
     local mver="auto"
     if [ "$2" = "--mysql" ] && [ -n "$3" ]; then mver="$3"; fi
     case "$target:$mver" in
         el6:*|el7:51|el7:auto) mver="51";;
         el8:*|el9:*)            [ "$mver" = "auto" ] && mver="57";;
+        el10:*)                 mver="84";;   # el10 官方 8.0 无包, 固定 8.4 (LTS)
         ubuntu18*)              mver="57";;
         ubuntu*)                mver="80";;
         debian*)                mver="80";;
@@ -91,14 +93,15 @@ pack_full() {
             yumdownloader --resolve --destdir="$outdir" unixODBC unixODBC-devel unixODBC.i686 glibc.i686 libstdc++.i686 libnsl.i686 libcrypt.i686 zlib.i686 libtool-ltdl 2>/dev/null
             echo "  el7 依赖已下载到 $outdir"
             ;;
-        el8|el9)
+        el8|el9|el10)
             local m; m=$(command -v dnf >/dev/null && echo dnf || echo yum)
             command -v dnf download >/dev/null 2>&1 || command -v yumdownloader >/dev/null 2>&1 || $m -y install dnf-plugins-core >/dev/null 2>&1
-            # 用发行版 AppStream 原生 mysql 包 (el8/el9 即 MySQL 8.0, 无需 mysql-community 官方源)
+            # 用发行版 AppStream 原生 mysql 包 (el8/el9 即 MySQL 8.0, el10 即 mysql8.4-* 8.4, 无需 mysql-community 官方源)
             # 若需官方 mysql-community 版本, 可先配置 mysql-community repo 后改用 mysql-community-server
             local outdir="$OFFLINE/rpm-packages/${target}/mysql${mver}"
             mkdir -p "$outdir"
             local dbpkg="mysql-server mysql mysql-libs mysql-common mysql-errmsg"
+            [ "$target" = "el10" ] && dbpkg="mysql8.4-server mysql8.4 mysql8.4-libs mysql8.4-common mysql8.4-errmsg"
             $m download --resolve --destdir="$outdir" $dbpkg 2>/dev/null || \
                 warn "dnf download 数据库包失败, 请确认 AppStream 源可用后重试"
             echo "  ${target} MySQL ${mver} 已下载到 $outdir"
