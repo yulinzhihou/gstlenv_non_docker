@@ -28,23 +28,26 @@ rhel_pkg_install() {
 
 # ---------- 切换国内源镜像 (各镜像路径结构一致, 仅替换域名) ----------
 rhel_switch_repo_mirror() {
-    # $1: tencent|huawei|tuna (aliyun 为默认首选, 不参与切换)
+    # $1: tencent|huawei|tuna|ustc (aliyun 为默认首选, 不参与切换)
     local mir="$1" dom=""
     case "$mir" in
         tencent) dom="mirrors.cloud.tencent.com";;
         huawei)  dom="mirrors.huaweicloud.com";;
         tuna)    dom="mirrors.tuna.tsinghua.edu.cn";;
+        ustc)    dom="mirrors.ustc.edu.cn";;
         *)       return 1;;
     esac
     # 匹配 "//域名" 以同时覆盖 http/https 前缀
-    sed -i "s|//mirrors\.aliyun\.com|//${dom}|g; s|//mirrors\.cloud\.tencent\.com|//${dom}|g; s|//mirrors\.huaweicloud\.com|//${dom}|g; s|//mirrors\.tuna\.tsinghua\.edu\.cn|//${dom}|g" /etc/yum.repos.d/tlbb.repo 2>/dev/null
+    sed -i "s|//mirrors\.aliyun\.com|//${dom}|g; s|//mirrors\.cloud\.tencent\.com|//${dom}|g; s|//mirrors\.huaweicloud\.com|//${dom}|g; s|//mirrors\.tuna\.tsinghua\.edu\.cn|//${dom}|g; s|//mirrors\.ustc\.edu\.cn|//${dom}|g" /etc/yum.repos.d/tlbb.repo 2>/dev/null
     [ -s /etc/yum.repos.d/tlbb.repo ]
 }
 
 # ---------- 配置国内 yum/dnf 源 ----------
 rhel_config_repo() {
-    # 离线模式: 跳过源配置, 直接使用本地安装包
-    [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && { log "离线模式: 跳过 yum/dnf 源配置, 使用本地 rpm 安装包"; return 0; }
+    # 离线模式: 跳过源配置, 直接使用本地安装包 (传 force 则无视离线标志强制配置, 用于离线缺失时的在线回退)
+    if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && [ "$1" != "force" ]; then
+        log "离线模式: 跳过 yum/dnf 源配置, 使用本地 rpm 安装包"; return 0
+    fi
     local repofile=""
     case "$SYS_ID:$SYS_BRANCH" in
         centos:el5)    repofile="centos5.repo";;
@@ -95,8 +98,8 @@ rhel_config_repo() {
         cacheok=1
         log "国内源 makecache 完成"
     else
-        warn "makecache 失败, 自动依次换用 腾讯云/华为云/清华 镜像重试..."
-        for mir in tencent huawei tuna; do
+        warn "makecache 失败, 自动依次换用 腾讯云/华为云/中科大/清华 镜像重试..."
+        for mir in tencent huawei ustc tuna; do
             rhel_switch_repo_mirror "$mir" || continue
             $m clean all >/dev/null 2>&1
             if $m makecache $retry_opt >/dev/null 2>&1; then
@@ -134,8 +137,17 @@ rhel_install_compat() {
             done
             log "离线兼容库处理完成: 新装 ${installed} 个, 已存在跳过 ${skipped} 个 (来自 $rdir)"
         else
-            warn "离线模式未找到兼容库 rpm (offline/rpm-packages/$SYS_BRANCH/), 32 位库可能缺失"
-            warn "提示: 联网机器上 'yumdownloader --resolve glibc.i686' 等获取后放入该目录"
+            # 离线缺失且网络可用时自动在线装 32 位兼容库 (dnf 并行装 i686 不降级 64 位)
+            if curl -sI --connect-timeout 3 --max-time 5 https://mirrors.aliyun.com >/dev/null 2>&1; then
+                log "离线未找到兼容库 rpm, 检测到网络可用, 自动回退在线源安装 32 位兼容库..."
+                rhel_config_repo force >/dev/null 2>&1
+                rhel_pkg_install glibc.i686 libstdc++.i686 libnsl.i686 libcrypt.i686 zlib.i686 ncurses-libs.i686 libgcc.i686 2>/dev/null \
+                    && log "32 位兼容库在线安装完成" \
+                    || warn "32 位兼容库在线安装失败 (源不可用), 请手动 'yumdownloader --resolve glibc.i686' 补齐"
+            else
+                warn "离线模式未找到兼容库 rpm 且无网络, 32 位库可能缺失"
+                warn "提示: 联网机器上 'yumdownloader --resolve glibc.i686' 等获取后放入该目录"
+            fi
         fi
         return 0
     fi
@@ -286,30 +298,42 @@ rhel_download_mysql_rpm() {
     primary=$(grep -oE 'href="repodata/[^"]*primary[^"]*"' "$tmpd/repomd.xml" | sed 's/href="//;s/"//' | head -1)
     [ -z "$primary" ] && { warn "repomd 解析失败"; return 1; }
     curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/primary.xml.gz" "$base/$primary" || { warn "primary 下载失败"; return 1; }
-    # 2. 提取 6 个核心包的最新版文件名 (排除 debug/devel/test)
+    # 2. 提取 6 个核心包的最新版文件名 (排除 debug/devel/test), 每包只取版本号最大的一个
     # 注意: 分组 key 必须取前 4 字段, 否则 mysql-community-client 与
     #       mysql-community-client-plugins 会合并为同组 (前者被吞, mysql 命令缺失)
+    # 关键: 只保留最新版一套, 混装多版本会导致 mysqld initialize segfault
+    #       (如 8.0.30 的 el9 包在 Stream 9 glibc 2.34 上有已知崩溃)
     local files
     files=$(zcat "$tmpd/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
         grep -E "mysql-community-(server|client|client-plugins|libs|common|icu-data-files)-[0-9]" | grep -vE "debug|devel|test|backup|router|shell|connector" | \
-        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3"-"$4; a[k]=$0} END{for(k in a) print a[k]}')
+        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3"-"$4; if($0>a[k]) a[k]=$0} END{for(k in a) print a[k]}')
     [ -z "$files" ] && { warn "primary 中未解析到 rpm 文件名"; return 1; }
-    # 3. 逐个下载
+    local total_mb=0 cnt=0
+    # 3. 静默下载最新版 (curl -s 不输出, 仅结束时汇总一行)
     local f ok=1
     for f in $files; do
-        log "  下载 $f ..."
-        curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/$f" "$base/$f" || { warn "下载失败: $f"; ok=0; break; }
+        if ! curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/$f" "$base/$f"; then
+            warn "下载失败: $f"; ok=0; break
+        fi
+        local sz; sz=$(du -k "$tmpd/$f" 2>/dev/null | cut -f1); total_mb=$((total_mb + sz)); cnt=$((cnt + 1))
     done
     [ "$ok" = "0" ] && return 1
-    # 4. 本地安装 (禁用 mysql repo 避免触发失效源)
-    dnf --disablerepo="mysql*" localinstall -y "$tmpd"/*.rpm >/dev/null 2>&1 || \
-    rpm -ivh "$tmpd"/*.rpm --nodeps --force >/dev/null 2>&1 || { warn "rpm 本地安装失败"; return 1; }
+    # 4. 本地安装: 先按依赖顺序 rpm -Uvh (可覆盖已装旧版), dnf localinstall 兜底
+    #    顺序: common -> libs -> client-plugins -> client -> icu-data-files -> server
+    local ord f2
+    for ord in common libs client-plugins client icu-data-files server; do
+        f2=$(echo "$files" | grep "mysql-community-${ord}-" | head -1)
+        [ -n "$f2" ] && rpm -Uvh "$tmpd/$f2" --nodeps --force >/dev/null 2>&1
+    done
+    rpm -q mysql-community-server >/dev/null 2>&1 || \
+        dnf --disablerepo="mysql*" localinstall -y "$tmpd"/*.rpm >/dev/null 2>&1 || \
+        { warn "rpm 本地安装失败"; return 1; }
     # 5. 补装 mysqld 系统依赖 (rpm --nodeps 场景可能缺失 libaio/protobuf, 否则 mysqld 起不来)
     local dep
     for dep in libaio protobuf-lite numactl-libs; do
         rpm -q "$dep" >/dev/null 2>&1 || rhel_pkg_install "$dep" >/dev/null 2>&1
     done
-    log "MySQL ${ver} rpm 直下安装完成 (最新版)"
+    log "MySQL ${ver} rpm 直下完成: ${cnt} 个最新版 rpm (server/client/libs/common, 共 $((total_mb/1024)) MB)"
     return 0
 }
 
@@ -792,7 +816,9 @@ rhel_install_odbc() {
                     for r in "$(dirname "$odfile")"/unixODBC*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
                     log "离线 unixODBC 安装完成 (来自 $(dirname "$odfile"))"
                 else
-                    warn "离线模式未找到 unixODBC rpm (offline/rpm-packages/$SYS_BRANCH/), isql 可能不可用"
+                    # 离线缺失时网络可用则自动在线装 unixODBC
+                    rhel_offline_fallback_online unixODBC "unixODBC" >/dev/null 2>&1 || \
+                        warn "离线模式未找到 unixODBC rpm 且无网络, isql 可能不可用"
                 fi
             else
                 local m; m=$(rhel_pkgmgr)
@@ -963,6 +989,25 @@ rhel_off_find() {
     find "$base" -maxdepth 2 -name "${prefix}*.rpm" 2>/dev/null | head -1
 }
 
+# ---------- 离线组件缺失时的在线回退 ----------
+# 有网场景: 离线包缺组件不再直接跳过, 自动强制配置国内源并用 dnf 在线安装;
+# 无网场景: 明确提示可加 --online 重试. $1=包名, $2=展示名
+rhel_offline_fallback_online() {
+    local pkg="$1" name="$2"
+    if curl -sI --connect-timeout 3 --max-time 5 https://mirrors.aliyun.com >/dev/null 2>&1; then
+        log "离线包未含 ${name} rpm, 检测到网络可用, 自动回退在线源安装..."
+        rhel_config_repo force >/dev/null 2>&1
+        if rhel_pkg_install "$pkg" >/dev/null 2>&1; then
+            log "${name} 在线源安装完成"
+            return 0
+        fi
+        warn "${name} 在线源安装失败 (源不可用或网络异常)"
+        return 1
+    fi
+    warn "离线包未含 ${name} rpm 且无网络, 跳过 (可选组件, 联网后执行 bash install.sh --online 可补装)"
+    return 1
+}
+
 # ---------- 可选组件: redis (billing/GM 工具依赖, 密码默认 gsgameshare.com) ----------
 # el10 官方 AppStream/EPEL 已无 redis 服务器包 (RHEL 10 生态以 Valkey 8 替代, RESP 协议兼容),
 # 在线/离线均自动回退 valkey (命令 valkey-server/valkey-cli, 端口与 requirepass 配置一致)
@@ -978,7 +1023,7 @@ rhel_install_redis() {
             rpm -ivh "$(dirname "$rfile")"/{redis,valkey}*.rpm --nodeps --force >/dev/null 2>&1 && \
                 log "离线 redis/valkey rpm 安装完成" || warn "离线 redis/valkey rpm 安装失败"
         else
-            warn "离线包未含 redis/valkey rpm, 跳过 (billing 验证可能需要 redis)"
+            rhel_offline_fallback_online redis "redis" || rhel_offline_fallback_online valkey "valkey" || true
         fi
     else
         if [ "$SYS_BRANCH" = "el10" ]; then
@@ -1030,7 +1075,7 @@ rhel_install_nginx() {
             rpm -ivh "$(dirname "$nfile")"/nginx*.rpm --nodeps --force >/dev/null 2>&1 && \
                 log "离线 nginx rpm 安装完成" || warn "离线 nginx rpm 安装失败"
         else
-            warn "离线包未含 nginx rpm, 跳过 (可选组件, 在线模式可装)"
+            rhel_offline_fallback_online nginx "nginx" || true
         fi
     else
         rhel_pkg_install nginx 2>/dev/null || { warn "nginx 安装失败 (当前系统源无可用包或网络异常, 已跳过)"; return 0; }
@@ -1055,7 +1100,7 @@ rhel_install_php() {
             rpm -ivh "$(dirname "$pfile")"/php*.rpm --nodeps --force >/dev/null 2>&1 && \
                 log "离线 php rpm 安装完成" || warn "离线 php rpm 安装失败"
         else
-            warn "离线包未含 php rpm, 跳过 (可选组件, 在线模式可装)"
+            rhel_offline_fallback_online php "php" || true
         fi
     else
         # AppStream/base 源即当前发行版可装的最新版 (el8+ 为 php 8.x, el7 为 5.4)

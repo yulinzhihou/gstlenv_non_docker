@@ -345,7 +345,7 @@ check_offline_complete() {
     esac
     if [ -n "$need" ]; then
         warn "离线模式缺少: $need"
-        warn "请使用 src/scripts/pack_offline.sh 在联网机器上补齐, 或改用 --online"
+        warn "提示: MySQL 将自动尝试官方源直下兜底; 可选组件(nginx/php/redis)缺失时, 网络可用会自动配置国内源在线安装"
     fi
 }
 

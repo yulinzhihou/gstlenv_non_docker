@@ -1,27 +1,42 @@
-﻿# CentOS 8.x (EOL) - 阿里云 vault 归档源 (dnf)
+﻿# CentOS 8.x (EOL) - 国内 vault 多镜像源 (dnf, 阿里云/腾讯云/华为云/中科大/清华/163 依次兜底)
 [baseos]
-name=CentOS-8 - BaseOS - aliyun-vault
+name=CentOS-8 - BaseOS - vault
 baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
         https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
+        https://mirrors.huaweicloud.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
+        https://mirrors.ustc.edu.cn/centos-vault/8.5.2111/BaseOS/$basearch/os/
+        https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8.5.2111/BaseOS/$basearch/os/
         http://mirrors.163.com/centos-vault/8.5.2111/BaseOS/$basearch/os/
 gpgcheck=0
 enabled=1
 
 [appstream]
-name=CentOS-8 - AppStream - aliyun-vault
+name=CentOS-8 - AppStream - vault
 baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/AppStream/$basearch/os/
         https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/AppStream/$basearch/os/
+        https://mirrors.huaweicloud.com/centos-vault/8.5.2111/AppStream/$basearch/os/
+        https://mirrors.ustc.edu.cn/centos-vault/8.5.2111/AppStream/$basearch/os/
+        https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8.5.2111/AppStream/$basearch/os/
+        http://mirrors.163.com/centos-vault/8.5.2111/AppStream/$basearch/os/
 gpgcheck=0
 enabled=1
 
 [powertools]
-name=CentOS-8 - PowerTools - aliyun-vault
+name=CentOS-8 - PowerTools - vault
 baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/PowerTools/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/PowerTools/$basearch/os/
+        https://mirrors.huaweicloud.com/centos-vault/8.5.2111/PowerTools/$basearch/os/
+        https://mirrors.ustc.edu.cn/centos-vault/8.5.2111/PowerTools/$basearch/os/
+        https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8.5.2111/PowerTools/$basearch/os/
 gpgcheck=0
 enabled=1
 
 [extras]
-name=CentOS-8 - Extras - aliyun-vault
+name=CentOS-8 - Extras - vault
 baseurl=https://mirrors.aliyun.com/centos-vault/8.5.2111/extras/$basearch/os/
+        https://mirrors.cloud.tencent.com/centos-vault/8.5.2111/extras/$basearch/os/
+        https://mirrors.huaweicloud.com/centos-vault/8.5.2111/extras/$basearch/os/
+        https://mirrors.ustc.edu.cn/centos-vault/8.5.2111/extras/$basearch/os/
+        https://mirrors.tuna.tsinghua.edu.cn/centos-vault/8.5.2111/extras/$basearch/os/
 gpgcheck=0
 enabled=1
