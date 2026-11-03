@@ -1,5 +1,11 @@
 /*
  * fwlog.c — GS游享网·天龙八部万能环境 武道四 v3 兼容层
+ * Author: yulinzhihou <yulinzhihou@gmail.com>
+ * Forum:  https://gsgamesahre.com
+ * Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+ * Date :  2026-11-03
+ * Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版)
+ * comment: fwrite 拦截兼容层 (LD_PRELOAD), 缓解武道四 v3 Server1 日志栈缓冲溢出崩溃
  *
  * 用途: 武道四 v3 Server1 存在日志栈缓冲溢出缺陷(日志分隔线写入固定栈缓冲溢出,
  *       导致 fwrite 第4参数 FILE* 被破坏为 NULL 后 SIGSEGV)。

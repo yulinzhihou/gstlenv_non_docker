@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: Debian 系安装模块 (Ubuntu 12~26 | Debian 10~18, 配置 apt 源 + MySQL + ODBC)
+
 # ============================================================
 # TLBB 万能环境安装包 - Debian 系安装模块 (modules/debian/install.sh)
 # 覆盖: Ubuntu 12~26 | Debian 10~18

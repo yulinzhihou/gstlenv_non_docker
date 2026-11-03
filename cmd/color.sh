@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 颜色代码公共库 (被所有 gs 命令 source 使用, 安装时部署到 /usr/local/bin/color)
+
 # ============================================================
 # color - 颜色代码公共库 (参考 gstlenv color.sh)
 # 被所有 gs 命令 source 使用, 安装时部署到 /usr/local/bin/color

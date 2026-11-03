@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 公共函数库 (全局常量/日志/通用函数, 被 install.sh 及各版本脚本 source 使用)
+
 # ============================================================
 # TLBB 万能环境安装包 - 公共函数库 (common.sh)
 # 适用: CentOS 6/7/8/9/10 | Alinux | TencentOS | openEuler | EulerOS

@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 重新构建环境版本 (参考 gstlenv transfer.sh, 原生版)
+
 # 设置字符编码，确保中文正常显示
 {
     export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
@@ -9,7 +16,6 @@
 # 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
 
-# comment: 重新构建环境版本 (参考 gstlenv transfer.sh, 原生版)
 # 原生环境按本机系统直接构建, 版本选择对应: 引擎类型/数据库版本
 # 用法:
 #   transfer          交互式选择环境版本

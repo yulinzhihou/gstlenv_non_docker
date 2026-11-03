@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 手动执行备份数据库功能和打包服务端
+
 # 设置字符编码，确保中文正常显示
 {
     export LANG=C.UTF-8 2>/dev/null || export LANG=en_US.UTF-8 2>/dev/null || export LANG=POSIX 2>/dev/null || true
@@ -9,7 +16,6 @@
 # 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
 
-# comment: 手动执行备份数据库功能和打包服务端
 if [ ! -f /root/.gs/.env ]; then
     echo -e "${GSISSUE}\r\n"
     echo -e "${CRED}环境未初始化，需要重新安装或者移除现有的环境重新安装！！！${CEND}"

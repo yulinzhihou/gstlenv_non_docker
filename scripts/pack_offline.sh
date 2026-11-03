@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 离线组件打包工具 (按发行版版本打包到 offline-packs/, 不入 git)
+
 # ============================================================
 # pack_offline.sh - 离线组件打包工具 (按发行版版本打包)
 # ------------------------------------------------------------

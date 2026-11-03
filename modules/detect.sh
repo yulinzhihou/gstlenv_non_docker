@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: 系统识别模块 (识别主流发行版与版本, 映射到 rhel/debian 安装家族)
+
 # ============================================================
 # TLBB 万能环境安装包 - 系统识别模块 (detect.sh)
 # 识别所有主流发行版与版本, 映射到安装家族:

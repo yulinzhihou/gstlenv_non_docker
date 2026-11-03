@@ -1,4 +1,11 @@
 #!/bin/bash
+# Author: yulinzhihou <yulinzhihou@gmail.com>
+# Forum:  https://gsgamesahre.com
+# Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
+# Date :  2026-11-03
+# Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
+# comment: Fedora 34~38 安装模块 (MySQL 8.0 通用二进制 tarball + archive 仓库兜底)
+
 # ============================================================
 # GS游享网 · 天龙八部万能安装器 - Fedora 34~38 安装模块
 # ------------------------------------------------------------
