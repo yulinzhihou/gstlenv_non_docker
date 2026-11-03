@@ -287,10 +287,12 @@ rhel_download_mysql_rpm() {
     [ -z "$primary" ] && { warn "repomd 解析失败"; return 1; }
     curl -s --connect-timeout 8 --max-time 300 -o "$tmpd/primary.xml.gz" "$base/$primary" || { warn "primary 下载失败"; return 1; }
     # 2. 提取 6 个核心包的最新版文件名 (排除 debug/devel/test)
+    # 注意: 分组 key 必须取前 4 字段, 否则 mysql-community-client 与
+    #       mysql-community-client-plugins 会合并为同组 (前者被吞, mysql 命令缺失)
     local files
     files=$(zcat "$tmpd/primary.xml.gz" 2>/dev/null | grep -oE '<location href="[^"]*\.rpm"' | sed 's/<location href="//;s/".*//' | \
         grep -E "mysql-community-(server|client|client-plugins|libs|common|icu-data-files)-[0-9]" | grep -vE "debug|devel|test|backup|router|shell|connector" | \
-        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3; a[k]=$0} END{for(k in a) print a[k]}')
+        sed 's#.*/##' | sort -V | awk -F- '{k=$1"-"$2"-"$3"-"$4; a[k]=$0} END{for(k in a) print a[k]}')
     [ -z "$files" ] && { warn "primary 中未解析到 rpm 文件名"; return 1; }
     # 3. 逐个下载
     local f ok=1
@@ -387,7 +389,13 @@ rhel_install_db() {
         fi
         warn "离线模式未找到 MySQL ${mver} rpm (offline/rpm-packages/$SYS_BRANCH/mysql${mver}/), 数据库需联网安装"
         warn "提示: 联网机器上 'bash scripts/pack_offline.sh --full <branch>' 补齐后放入该目录"
-        die "离线数据库包缺失, 安装中止 (或将 offline/rpm-packages/$SYS_BRANCH/mysql${mver}/ 补齐后重试)"
+        # 离线包缺失时尝试 curl 直下官方源兜底 (部分服务器仅 repo.mysql.com 可达)
+        warn "尝试 curl 直下 MySQL ${mver} 官方源兜底..."
+        if rhel_download_mysql_rpm "$mver" "${SYS_BRANCH#el}" 2>/dev/null; then
+            log "MySQL ${mver} 官方源直下兜底安装完成"
+            return 0
+        fi
+        die "离线数据库包缺失且官方直下失败, 安装中止 (或将 offline/rpm-packages/$SYS_BRANCH/mysql${mver}/ 补齐后重试)"
     fi
     case "$mver" in
         51)

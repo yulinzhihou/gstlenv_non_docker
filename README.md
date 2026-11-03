@@ -80,7 +80,9 @@ curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main
 > 可选参数：
 > - 指定数据库密码：`... | bash -s -- --dbpass 你的密码`
 > - 强制在线模式（配置国内源 repo 安装）：`... | bash -s -- --online`
-> - 离线模式（无网络，需先解压离线组件附件到 `/root/.tlgame/offline-packs/`）：`... | bash -s -- --offline`
+> - 离线模式（无网络）：把离线组件附件（`offline-*.tar.gz` / `tlbb离线组件*.zip`）放到 `/root` 下，
+>   一条命令自动解压到 `/root/.tlgame/offline/` 并自动以离线模式安装；需强制在线可加 `--online`：
+>   `... | bash`（检测到离线包自动 `--offline`）或显式 `... | bash -s -- --offline`
 > - 预置可选组件（默认安装完 MySQL 后交互询问，**提示 `[y/N, 回车=不安装]`，默认 N 不装**）：`TLBB_OPT_NGINX=1 TLBB_OPT_PHP=1 TLBB_OPT_REDIS=1 bash install.sh`
 > - 预置数据库结构（8.0+ 交互询问 3库/2库）：`TLBB_DB_LAYOUT=3|2 bash install.sh`
 

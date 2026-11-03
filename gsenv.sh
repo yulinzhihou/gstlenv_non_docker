@@ -16,8 +16,10 @@
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --online
 #   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --dbpass mypass
-# 离线安装(无网络, 需先把离线组件附件解压到 /root/tlbb离线组件/):
-#   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash -s -- --offline
+# 离线安装(无网络, 把离线组件附件放到 /root 下, 自动解压并自动以 --offline 运行):
+#   curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash
+#   自动识别 /root/offline-*.tar.gz /root/tlbb离线组件*.zip 并解压到 /root/.tlgame/offline/
+#   除非显式传 --online, 否则检测到离线组件后自动以离线模式安装
 # ------------------------------------------------------------
 # 流程: 检测root -> 展示广告 -> 下载仓库源码 -> 部署到 /root/.tlgame
 #       -> 执行 install.sh (透传参数)
@@ -112,11 +114,45 @@ deploy() {
 
 # ---------- 检查离线组件(可选) ----------
 check_offline() {
-    # 如果 /root 下存在离线组件压缩包, 提示如何启用离线模式
-    local packs=$(ls /root/tlbb离线组件*.zip /root/tlbb离线组件*.tar.gz /root/offline*.tar.gz 2>/dev/null | head -1)
+    # 若 /root 下存在离线组件压缩包 (offline-*.tar.gz / tlbb离线组件*.zip 等),
+    # 自动解压到 ${ENV_DIR}/offline/ 并提示将自动启用离线模式
+    local packs=$(ls /root/tlbb离线组件*.zip /root/tlbb离线组件*.tar.gz /root/offline*.tar.gz /root/*-offline.tar.gz 2>/dev/null | head -1)
     if [ -n "$packs" ]; then
         echo -e "${CYELLOW}检测到离线组件包: ${packs}${CEND}"
-        echo -e "${CYELLOW}如需离线安装, 请先解压到 ${ENV_DIR}/offline-packs/ 后执行: bash ${ENV_DIR}/install.sh --offline${CEND}"
+        # 已解压且非空则跳过
+        if [ -d "${ENV_DIR}/offline" ] && find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+            echo -e "${CGREEN}离线组件已就绪: ${ENV_DIR}/offline/${CEND}"
+            return 0
+        fi
+        echo -e "${CYELLOW}自动解压离线组件包到 ${ENV_DIR}/offline/ ...${CEND}"
+        mkdir -p "${ENV_DIR}/offline"
+        case "$packs" in
+            *.tar.gz|*.tgz)
+                tar zxf "$packs" -C "${ENV_DIR}/offline/" 2>/dev/null || \
+                    { echo -e "${CRED}解压失败: $packs (请手动解压后重试)${CEND}"; return 1; } ;;
+            *.zip)
+                if command -v unzip >/dev/null 2>&1; then
+                    unzip -q -o "$packs" -d "${ENV_DIR}/offline/" 2>/dev/null || \
+                        { echo -e "${CRED}解压失败: $packs (请手动解压后重试)${CEND}"; return 1; }
+                else
+                    echo -e "${CRED}未安装 unzip, 无法自动解压 ${packs}${CEND}"
+                    echo -e "${CYELLOW}请手动: cd ${ENV_DIR} && unzip ${packs} -d offline/${CEND}"
+                    return 1
+                fi ;;
+            *)
+                echo -e "${CRED}不支持的离线包格式: $packs${CEND}"
+                return 1 ;;
+        esac
+        # 兼容包内带 offline/ 顶层目录的情况
+        if [ -d "${ENV_DIR}/offline/offline" ]; then
+            mv "${ENV_DIR}/offline/offline"/* "${ENV_DIR}/offline/" 2>/dev/null
+            rmdir "${ENV_DIR}/offline/offline" 2>/dev/null || true
+        fi
+        if find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+            echo -e "${CGREEN}离线组件已就绪: ${ENV_DIR}/offline/ (将自动以 --offline 模式安装)${CEND}"
+        else
+            echo -e "${CRED}解压后 offline/ 为空, 请检查离线包内容${CEND}"
+        fi
     fi
 }
 
@@ -133,7 +169,15 @@ echo -e "${CYELLOW}提示: 如需指定数据库密码, 可先执行: bash ${ENV
 cd "${ENV_DIR}" || exit 1
 
 # 透传参数 (--online / --offline / --dbpass xxx / 环境变量)
-bash install.sh "$@" | tee -a /root/.tlgame/install.log
+# 检测到 offline/ 已就绪且用户未显式指定 --online 时, 自动追加 --offline
+auto_offline=""
+if [ -d "${ENV_DIR}/offline" ] && find "${ENV_DIR}/offline" -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .; then
+    case " $* " in
+        *" --online "*) : ;;   # 用户显式要求在线, 不覆盖
+        *) auto_offline="--offline"; echo -e "${CGREEN}检测到离线组件, 自动以离线模式安装 (如需在线请加 --online)${CEND}" ;;
+    esac
+fi
+bash install.sh $auto_offline "$@" | tee -a /root/.tlgame/install.log
 
 echo -e "${CPURPLE}==============================================================${CEND}"
 echo -e "${CCYAN}  GS游享网 · 天龙八部万能环境 安装流程结束${CEND}"
