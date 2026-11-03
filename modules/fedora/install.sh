@@ -140,15 +140,15 @@ UNIT
     done
     /usr/local/mysql/bin/mysqladmin ping >/dev/null 2>&1 || die "MySQL 启动失败"
 
-    # 设置 root 密码 + gs 用户 (大小写兼容, 密码默认对齐 gstlenv)
-    local pass="${TLBB_DB_PASS:-123456}"
+    # 设置独立的 root 与游戏账号密码。
+    local pass="${TLBB_DB_PASS:?请先初始化服务凭据}"
     /usr/local/mysql/bin/mysql -uroot <<SQL 2>/dev/null || true
 ALTER USER 'root'@'localhost' IDENTIFIED BY '${pass}';
 CREATE USER IF NOT EXISTS 'root'@'127.0.0.1' IDENTIFIED BY '${pass}';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'127.0.0.1' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'gs'@'localhost' IDENTIFIED BY '${pass}';
+CREATE USER IF NOT EXISTS 'gs'@'localhost' IDENTIFIED BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'localhost' WITH GRANT OPTION;
-CREATE USER IF NOT EXISTS 'gs'@'127.0.0.1' IDENTIFIED BY '${pass}';
+CREATE USER IF NOT EXISTS 'gs'@'127.0.0.1' IDENTIFIED BY '${TLBB_MYSQL_PASSWORD}';
 GRANT ALL PRIVILEGES ON *.* TO 'gs'@'127.0.0.1' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 SQL
@@ -159,7 +159,7 @@ SQL
     done
     ln -sf /usr/local/mysql/bin/mysql /usr/bin/mysql 2>/dev/null
     ln -sf /usr/local/mysql/bin/mysqladmin /usr/bin/mysqladmin 2>/dev/null
-    log "MySQL 8.0 部署完成 (root/gs 密码 ${pass})"
+    log "MySQL 8.0 部署完成 (服务凭据已私密保存)"
 }
 
 # ---------- ODBC 驱动 ----------
@@ -179,7 +179,7 @@ Server=127.0.0.1
 Port=${TL_MYSQL_PORT:-3306}
 Database=tlbbdb
 User=root
-Password=${TLBB_DB_PASS:-123456}
+Password=${TLBB_DB_PASS}
 ODBC
     [ -f /etc/odbcinst.ini ] || cat > /etc/odbcinst.ini <<ODBCI
 [MySQL ODBC]
@@ -197,11 +197,12 @@ fed_install_redis() {
     else
         dnf install -y redis >/dev/null 2>&1 || true
     fi
-    # 密码对齐 gstlenv (gsgameshare.com)
-    sed -i 's/^# *requirepass.*/requirepass gsgameshare.com/; s/^requirepass.*/requirepass gsgameshare.com/' /etc/redis/redis.conf 2>/dev/null || true
+    local rp="${TLBB_REDIS_PASSWORD:?请先初始化服务凭据}"
+    sed -i '/^[[:space:]]*requirepass[[:space:]]/d' /etc/redis/redis.conf || return 1
+    printf '\nrequirepass "%s"\n' "$rp" >> /etc/redis/redis.conf
     systemctl enable redis >/dev/null 2>&1
     systemctl restart redis >/dev/null 2>&1
-    redis-cli -a gsgameshare.com ping >/dev/null 2>&1 && log "Redis 已启动 (密码 gsgameshare.com)" || warn "Redis 未响应 (可稍后手动启动)"
+    REDISCLI_AUTH="$rp" redis-cli ping >/dev/null 2>&1 && log "Redis 密码认证通过" || warn "Redis 未响应 (可稍后手动启动)"
 }
 
 # ---------- 可选组件: nginx (系统源最新版) ----------
@@ -237,11 +238,12 @@ fed_install_optional() {
     log "可选组件询问 (nginx/php/redis, 直接回车=不安装)..."
     [ "$(ask_optional_component nginx "Web 服务器, 用于 GM 工具/网站 (将安装当前系统源最新版)" TLBB_OPT_NGINX)" = "1" ] && fed_install_nginx
     [ "$(ask_optional_component php "PHP 运行时, 配合 Nginx 提供网站服务 (将安装当前系统源最新版)" TLBB_OPT_PHP)" = "1" ] && fed_install_php
-    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 密码默认 gsgameshare.com (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && fed_install_redis
+    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 使用持久化随机密码 (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && fed_install_redis
 }
 
 # ---------- 主流程 ----------
 fed_install() {
+    ask_dbpass
     fed_config_source
     fed_install_compat
     fed_install_db
@@ -254,12 +256,12 @@ fed_install() {
 fed_verify() {
     log "========== Fedora 环境验证 =========="
     local ok=0
-    mysql -uroot -p"${TLBB_DB_PASS:-123456}" -e "SELECT 1" >/dev/null 2>&1 && \
-        { log "[PASS] MySQL 运行中 ($(mysql -uroot -p"${TLBB_DB_PASS:-123456}" -N -e 'SELECT VERSION()' 2>/dev/null))"; ok=$((ok+1)); } || \
+    mysql -uroot -p"${TLBB_DB_PASS}" -e "SELECT 1" >/dev/null 2>&1 && \
+        { log "[PASS] MySQL 运行中 ($(mysql -uroot -p"${TLBB_DB_PASS}" -N -e 'SELECT VERSION()' 2>/dev/null))"; ok=$((ok+1)); } || \
         warn "[FAIL] MySQL 未运行"
     isql -v tlbbdb -e "SELECT 1" >/dev/null 2>&1 && { log "[PASS] ODBC DSN tlbbdb 连通"; ok=$((ok+1)); } || warn "[FAIL] ODBC 未连通"
     if command -v redis-server >/dev/null 2>&1 || command -v redis-cli >/dev/null 2>&1; then
-        redis-cli -a gsgameshare.com ping >/dev/null 2>&1 && { log "[PASS] Redis PONG"; ok=$((ok+1)); } || warn "[FAIL] Redis 未响应"
+        REDISCLI_AUTH="$TLBB_REDIS_PASSWORD" redis-cli ping >/dev/null 2>&1 && { log "[PASS] Redis PONG"; ok=$((ok+1)); } || warn "[FAIL] Redis 未响应"
     else
         log "Redis 未安装 (可选组件), 跳过验证"
     fi

@@ -22,7 +22,7 @@ if [ ! -f /root/.gs/.env ]; then
     exit 1
 fi
 
-ROOT_PW="${TL_MYSQL_PASSWORD:-123456}"
+ROOT_PW="${TL_MYSQL_PASSWORD:?环境配置缺少数据库密码}"
 
 MV=$(mysql -uroot -p"${ROOT_PW}" -N -e "SELECT VERSION();" 2>/dev/null | head -1)
 if [ -z "$MV" ]; then

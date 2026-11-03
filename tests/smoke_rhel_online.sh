@@ -7,10 +7,7 @@ set -eo pipefail
     exit 1
 }
 cd /work
-PKG_ROOT=/work
-source modules/common.sh
-source modules/detect.sh
-source modules/rhel/install.sh
+source /work/install.sh
 detect_system
 expected_branch="${1:-el10}"
 [ "$SYS_ID:$SYS_BRANCH" = "centos:$expected_branch" ] || exit 1
@@ -23,17 +20,21 @@ case "$expected_branch" in
     *) exit 1;;
 esac
 TLBB_DB_LAYOUT=3
-TLBB_DB_PASS=123456
 TLBB_OPT_NGINX=1
 TLBB_OPT_PHP=1
 TLBB_OPT_REDIS=1
+prepare_credentials
+initial_root_password="$TLBB_DB_PASS"
 
-# Containers have no systemd PID 1. Run the same package binaries/configurations;
-# unit enablement and SELinux still require a full VM/host test.
+# Containers have no systemd PID 1. Run the same package binaries/configurations
+# and verify real enablement links; actual reboot/SELinux needs a full VM/host.
 systemctl() {
     local action="$1" svc="${@: -1}"
-    [ "$action" != list-unit-files ] || return 0
+    case "$action" in
+        list-unit-files|is-enabled) command systemctl "$@"; return $?;;
+    esac
     if [ "$action" = enable ]; then
+        command systemctl enable "$svc" || return 1
         [[ " $* " == *' --now '* ]] || return 0
     fi
     case "$svc" in
@@ -81,7 +82,7 @@ rhel_setup_db
 echo 'PASS: rerun preserves populated databases'
 
 # Exercise recovery from the exact intermediate password left by the old script.
-rhel_set_root_password "$TLBB_DB_PASS" 'Gstest@123456'
+rhel_set_root_password "$TLBB_DB_PASS" "Gstest@${TLBB_DB_PASS}"
 rhel_setup_db
 echo 'PASS: previous installer intermediate password recovered'
 
@@ -103,10 +104,12 @@ echo 'PASS: two-database layout imports its own main database'
 
 # Escaping must survive both SQL execution and subsequent login.
 TLBB_DB_PASS="Tmp9!quo'te\\slash"
-rhel_set_root_password 123456 "$TLBB_DB_PASS"
+rhel_set_root_password "$initial_root_password" "$TLBB_DB_PASS"
 rhel_bootstrap_password
 rhel_create_databases
 echo 'PASS: quotes and backslashes in root password'
+rhel_set_root_password "$TLBB_DB_PASS" "$initial_root_password"
+TLBB_DB_PASS="$initial_root_password"
 
 rhel_install_optional
 [ "${TLBB_OPTIONAL_FAILED:-0}" = 0 ] || exit 1
@@ -116,6 +119,30 @@ rcli=redis-cli
 command -v valkey-cli >/dev/null 2>&1 && rcli=valkey-cli
 REDISCLI_AUTH="$TLBB_REDIS_PASSWORD" "$rcli" ping | grep -qx PONG
 echo 'PASS: nginx, PHP/FPM/MySQL extension, Redis/Valkey authenticated PING'
+rhel_install_odbc
+rhel_config_odbc
+printf 'SELECT 1;\n' | isql -b tlbbdb | grep -q '1'
+[ "$TLBB_ODBC_BITS" = 64 ]
+echo 'PASS: native 64-bit ODBC driver loads and authenticates using generated game password'
+gen_env
+(
+    source /root/.gs/.env
+    for var in TL_MYSQL_PASSWORD TLBB_MYSQL_PASSWORD REDIS_PASSWORD LOGIN_PASSWORD PRIVATE_KEY; do
+        value="${!var}"
+        [ "${#value}" = 12 ]
+        [[ "$value" == *[A-Z]* && "$value" == *[a-z]* && "$value" == *[0-9]* && "$value" == *[_+=.-]* ]]
+    done
+    MYSQL_PWD="$TL_MYSQL_PASSWORD" mysql --no-defaults --protocol=tcp -h127.0.0.1 -uroot -Nse 'SELECT 1;' >/dev/null
+)
+[ "$(stat -c %a /root/.gs/.env)" = 600 ]
+[ "$(stat -c %a /etc/odbc.ini)" = 600 ]
+enable_installed_services
+for svc in mysqld nginx php-fpm; do
+    [ "$(command systemctl is-enabled "$svc")" = enabled ]
+done
+if command -v valkey-server >/dev/null 2>&1; then rsvc=valkey; else rsvc=redis; fi
+[ "$(command systemctl is-enabled "$rsvc")" = enabled ]
+echo 'PASS: private runtime config contains reusable random secrets and all service units are enabled'
 mysql --version
 nginx -v
 php -v | head -n 1

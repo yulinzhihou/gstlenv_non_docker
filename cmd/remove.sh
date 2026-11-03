@@ -101,7 +101,7 @@ uninstall_commands() {
 # 兼容 2库/3库/自定义结构), 输出 /root/tlbbdb_backup_<时间戳>/ 及同名 .tar.gz
 backup_sql() {
     echo -e "${CYELLOW}  → 备份 MySQL 数据库到 /root ...${CEND}"
-    local dbpass="${TLBB_DB_PASS:-123456}"
+    local dbpass="${TL_MYSQL_PASSWORD:-${TLBB_DB_PASS:?环境配置缺少数据库密码}}"
     local bkdir="/root/tlbbdb_backup_$(date +%Y%m%d%H%M%S)"
     mkdir -p "$bkdir" 2>/dev/null || { echo -e "${CWARNING}    无法创建备份目录 $bkdir, 跳过 SQL 备份${CEND}"; return 0; }
 

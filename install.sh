@@ -34,12 +34,12 @@
 #   4) 安装 unixODBC + MySQL ODBC 驱动 (32 位 + 64 位)
 #   5) 导入 tlbbdb / web 库
 #   6) 可选组件 (安装完 MySQL 后交互询问, 默认不装): nginx / php / redis
-#      redis 密码默认 gsgameshare.com; 可 TLBB_OPT_NGINX/PHP/REDIS=1 预置安装
+#      服务密码默认独立随机生成 12 位并保存; 可 TLBB_OPT_NGINX/PHP/REDIS=1 预置安装
 #   7) 部署 gs 原命令名 (untar/setini/runtlbb/... 与 gstlenv 完全一致) + gsctl 统一入口
 # ============================================================
 
 export LC_ALL=C
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PKG_ROOT="$SCRIPT_DIR"
 
 # ---------- 加载模块 ----------
@@ -49,13 +49,17 @@ done
 
 # ---------- 生成运行环境文件 (对齐 gstlenv /root/.gs/.env) ----------
 gen_env() {
-    local env_dir=/root/.gs
+    local env_dir="${TLBB_STATE_DIR:-/root/.gs}"
     mkdir -p "$env_dir" /tlgame /tlgame/backup /tlgame/www/ow /tlgame/www/gm /tlgame/conf.d /tlgame/billing /root/.tlgame 2>/dev/null
-    local mver dbpass_shell redispass_shell
+    local mver dbpass_shell redispass_shell gamepass_shell gmpass_shell private_shell temp
     mver=$(select_mysql_version)
     printf -v dbpass_shell '%q' "$TLBB_DB_PASS"
     printf -v redispass_shell '%q' "$TLBB_REDIS_PASSWORD"
-    cat > "$env_dir/.env" <<EOF
+    printf -v gamepass_shell '%q' "$TLBB_MYSQL_PASSWORD"
+    printf -v gmpass_shell '%q' "$TLBB_GM_PASSWORD"
+    printf -v private_shell '%q' "$TLBB_PRIVATE_KEY"
+    temp=$(mktemp "$env_dir/runtime.XXXXXX") || return 1
+    cat > "$temp" <<EOF || { rm -f "$temp"; return 1; }
 # TLBB 原生环境配置 (由 install.sh 生成, 变量名/默认值对齐 gstlenv env.sample)
 VERSION="v2.8.28"
 UPDATE="$(date +%Y-%m-%d)"
@@ -115,11 +119,13 @@ WEB_GM_DEFAULT_PORT=61888
 WEB_GM_PORT=61888
 
 # MYSQL 用户
-TL_MYSQL_USER="gs"
+TL_MYSQL_USER="${TLBB_MYSQL_USER}"
 
 # MYSQL root密码 (使用 Bash 字面量转义, 避免 source 误解释特殊字符)
-TL_MYSQL_DEFAULT_PASSWORD="123456"
+TL_MYSQL_DEFAULT_PASSWORD=${dbpass_shell}
 TL_MYSQL_PASSWORD=${dbpass_shell}
+TLBB_DB_PASS=${dbpass_shell}
+TLBB_MYSQL_PASSWORD=${gamepass_shell}
 
 # TL服务端在宿主主机路径 (原生: /tlgame/tlbb, 与 gstlenv 一致)
 TLBB_PATH="/tlgame/tlbb"
@@ -137,19 +143,22 @@ DEFAULT_ENV_INDEX=1
 # GM工具对应的配置
 LOGIN_DEFAULT_USER_NAME="gsgameshare"
 LOGIN_USER_NAME="gsgameshare"
-LOGIN_DEFAULT_PASSWORD="gsgameshare.com"
-LOGIN_PASSWORD="gsgameshare.com"
-PRIVATE_DEFAULT_KEY="Gsgameshare.com2025"
-PRIVATE_KEY="Gsgameshare.com2025"
+LOGIN_DEFAULT_PASSWORD=${gmpass_shell}
+LOGIN_PASSWORD=${gmpass_shell}
+PRIVATE_DEFAULT_KEY=${private_shell}
+PRIVATE_KEY=${private_shell}
 REDIS_PASSWORD=${redispass_shell}
-REDIS_DEFAULT_PASSWORD="gsgameshare.com"
+REDIS_DEFAULT_PASSWORD=${redispass_shell}
 
 # 原生新增: MySQL 档位 (对齐 gstlenv 环境编号: 1=CS6+5.1 2=CS7+5.1 3=CS7+5.7 4=CS9+8.0)
 TLBB_MYSQL_VERSION="${mver}"
 TLBB_MYSQL_USER="${TLBB_MYSQL_USER}"
 TLBB_DB_LAYOUT="${TLBB_DB_LAYOUT:-2}"
+TLBB_ODBC_BITS="${TLBB_ODBC_BITS:-auto}"
+TLBB_ODBC_DRIVER="${TLBB_ODBC_DRIVER:-}"
 EOF
-    chmod 600 "$env_dir/.env"
+    chmod 600 "$temp" && mv -f "$temp" "$env_dir/.env" || return 1
+    rm -f "$env_dir/credentials.pending.env"
     log "运行环境文件已生成: $env_dir/.env (对齐 gstlenv env.sample)"
 }
 
@@ -297,17 +306,15 @@ finish_banner() {
     fi
     echo "--------------------------------------------------------------"
     echo "  数据库 : MySQL ${mver}  (root 本地/远程均已设置密码)"
-    echo "  MySQL 账号 (本地+远程均可登录):"
-    echo "    root : root@localhost / ${TLBB_DB_PASS}"
-    echo "    root : root@'%'        / ${TLBB_DB_PASS}   (远程登录)"
-    echo "    gs   : gs@'%'          / ${TLBB_MYSQL_PASSWORD}   (游戏/服务端专用, 远程登录)"
+    echo "  服务凭据: ${TLBB_STATE_DIR:-/root/.gs}/.env (权限 600, 密码不写入安装日志)"
     if { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "${TLBB_DB_LAYOUT:-3}" = "3" ]; then
         echo "  库     : tlbbdb_main, tlbbdb_10, web"
     else
         echo "  库     : tlbbdb, web"
     fi
-    echo "  ODBC   : /etc/odbc.ini (DSN=tlbbdb, 32位驱动 libmyodbc3)"
-    echo "  64位驱动: /usr/lib64/libmyodbc.so (el7+ 可选)"
+    echo "  ODBC   : ${TLBB_ODBC_BITS:-自动} 位 | ${TLBB_ODBC_DRIVER:-/etc/odbc.ini}"
+    command -v valkey-cli >/dev/null 2>&1 && echo "  Redis兼容服务: valkey.service | 客户端: valkey-cli (不是 redis-cli)"
+    echo "  自启动 : 已安装的数据库、Nginx、PHP-FPM、Redis/Valkey 已启用并检查"
     echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar"
     echo "  启动   : setini && runtlbb   状态: runtop"
     echo "  帮助   : gs (命令帮助)  /  gsctl <命令> (统一入口)"
@@ -391,6 +398,7 @@ main() {
     done
 
     check_root
+    prepare_credentials || die "服务凭据生成或保存失败"
     check_arch
     brand_banner
     detect_system
@@ -437,10 +445,13 @@ main() {
             ;;
     esac
 
-    gen_env
+    gen_env || die "运行配置保存失败, 凭据仍保存在私有 pending 文件中"
+    enable_installed_services || die "部分环境服务未能设置开机自启, 请检查上方错误"
     install_cmd
     finish_banner
     [ "${TLBB_OPTIONAL_FAILED:-0}" != "1" ]
 }
 
-main "$@"
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi

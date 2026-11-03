@@ -22,7 +22,7 @@ if [ ! -f /root/.gs/.env ]; then
     exit 1
 fi
 
-TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:-123456}"
+TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:?环境配置缺少数据库密码}"
 
 # 不传参数，表示一切归零，还原默认值
 if [ $# -eq 0 ]; then

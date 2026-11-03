@@ -447,13 +447,13 @@ deb_install_redis() {
         systemctl enable --now redis >/dev/null 2>&1 || \
         { redis-server --daemonize yes >/dev/null 2>&1 || warn "redis 启动失败"; }
     sleep 2
-    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
+    local rp="${TLBB_REDIS_PASSWORD:?请先初始化服务凭据}"
     if redis-cli -a "$rp" ping >/dev/null 2>&1; then
-        log "Redis 安装成功并验证通过: 127.0.0.1:6379, 密码已配置 ${rp}"
+        log "Redis 密码认证通过: 127.0.0.1:6379"
     else
         redis-cli CONFIG SET requirepass "$rp" >/dev/null 2>&1 && \
-            redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置为 ${rp}" || \
-            warn "Redis 密码设置失败, 请手动: redis-cli CONFIG SET requirepass ${rp}"
+            redis-cli -a "$rp" ping >/dev/null 2>&1 && log "Redis 密码已设置" || \
+            warn "Redis 密码设置失败, 请检查服务配置"
     fi
     local rconf=$(find /etc -name "redis.conf" 2>/dev/null | head -1)
     if [ -n "$rconf" ]; then
@@ -461,7 +461,7 @@ deb_install_redis() {
             sed -i "s/^requirepass.*/requirepass ${rp}/" "$rconf" || \
             echo "requirepass ${rp}" >> "$rconf"
     fi
-    log "Redis 配置完成: 127.0.0.1:6379, 密码 ${rp}"
+    log "Redis 配置完成: 127.0.0.1:6379"
 }
 
 # ---------- 可选组件: nginx (系统源最新版) ----------
@@ -526,7 +526,7 @@ deb_install_optional() {
     log "可选组件询问 (nginx/php/redis, 直接回车=不安装)..."
     [ "$(ask_optional_component nginx "Web 服务器, 用于 GM 工具/网站 (将安装当前系统源最新版)" TLBB_OPT_NGINX)" = "1" ] && deb_install_nginx
     [ "$(ask_optional_component php "PHP 运行时, 配合 Nginx 提供网站服务 (将安装当前系统源最新版)" TLBB_OPT_PHP)" = "1" ] && deb_install_php
-    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 密码默认 gsgameshare.com (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && deb_install_redis
+    [ "$(ask_optional_component redis "Redis 内存数据库, billing/GM 工具依赖, 使用持久化随机密码 (将安装当前系统源最新版)" TLBB_OPT_REDIS)" = "1" ] && deb_install_redis
 }
 
 # ---------- Debian 主流程 ----------

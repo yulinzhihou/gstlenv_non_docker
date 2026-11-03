@@ -25,7 +25,7 @@ fi
 TLBB_HOME="${TLBB_HOME:-/tlgame}"
 TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
 BACKUP_DIR="${BACKUP_DIR:-/tlgame/backup}"
-TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:-123456}"
+TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:?请先完成安装并生成配置文件}"
 
 # 备份版本+数据库 (原生)
 backup_all() {

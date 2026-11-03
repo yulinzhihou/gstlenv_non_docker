@@ -61,6 +61,8 @@ CentOS Stream 10 在线安装及 MySQL 登录/建库/导入问题的修复与复
 [2026-11-03 Linux 在线安装修复](docs/linux-online-repair-20261103.md)。
 在线安装包现包含 `sql/` 初始数据库文件，不需要为了导入 SQL 下载完整离线 RPM 包；
 补装组件时会保留已有表和数据。
+服务自启、随机凭据与 ODBC 位数适配说明见
+[2026-11-03 运行环境优化](docs/runtime-defaults-20261103.md)。
 
 ### 视频教程（小白新手快速从 0 到 1，教程为 Docker 版，原生版操作步骤相同，仅环境安装方式不同）
 - [第一课：服务器环境安装（虚拟机+云主机）](https://www.bilibili.com/video/BV1oN411y7r7/)
@@ -102,7 +104,7 @@ bash install.sh
 
 > 安装过程自动完成：识别系统 → 选择 MySQL 档位（1=5.1 / 2=5.7 / 3=8.0 / 4=8.4，回车=auto，el10 推荐 8.4）→ **8.0+ 交互选择数据库结构（3库=tlbbdb_10+tlbbdb_main+web 新端 / 2库=tlbbdb+web 怀旧端）** → 配置国内源 → 装 32 位兼容库 → 装数据库（MySQL 5.1/5.7/8.0/8.4）→ **按所选结构建库（目标库先建好）并指定库导入 SQL（兼容有/无 CREATE DATABASE/USE 头的 SQL）** → 可选组件（nginx/php/redis，提示 `[y/N, 回车=不安装]`，装后逐一验证 `nginx -v`/`php -v`/`redis-cli ping`）→ 装 unixODBC + 驱动 → 部署 gs 原命令名 + gsctl。
 
-- 第 2 步：**如果想使用默认配置（默认的端口，默认的数据库密码 123456 等），可以跳过此步骤**
+- 第 2 步：**如果使用默认端口及自动生成的随机密码，可以跳过此步骤。凭据保存在 `/root/.gs/.env`，不再使用固定默认密码。**
 
 ```bash
 # 执行此命令，进入交互配置界面（可修改服务器模式/端口/数据库密码等）
@@ -197,8 +199,8 @@ runtop
 cd /root/src
 bash install.sh
 
-# 免交互（指定数据库密码，默认 123456 对齐 gstlenv）
-TLBB_DB_PASS=你的密码 bash install.sh
+# 免交互（密码默认自动生成并保存；可用 TLBB_DB_PASS 显式指定 root 密码）
+TLBB_NONINTERACTIVE=1 bash install.sh --online
 # 指定 MySQL 档位（可选，默认 auto 按系统）
 TLBB_MYSQL_VERSION=57 bash install.sh
 ```
@@ -313,20 +315,30 @@ transfer                  # 重新构建环境版本（1=CS6+5.1 2=CS7+5.1 3=CS7
 | SERVER_PORT | 15680 | 游戏网关端口 |
 | WEB_PORT | 51888 | 网站端口 |
 | WEB_GM_PORT | 61888 | GM 网站端口 |
-| TL_MYSQL_PASSWORD | 123456 | 数据库 root 密码 |
-| LOGIN_USER_NAME / LOGIN_PASSWORD | gsgameshare / gsgameshare.com | GM 工具登录账号 |
-| PRIVATE_KEY | Gsgameshare.com2025 | GM 通信私钥 |
-| REDIS_PASSWORD | gsgameshare.com | Redis 密码（预留） |
+| TL_MYSQL_PASSWORD / TLBB_DB_PASS | 独立随机 12 位 | 数据库 root 密码（两项为同一值） |
+| TLBB_MYSQL_USER / TLBB_MYSQL_PASSWORD | gs / 独立随机 12 位 | 游戏数据库账号，与 root 密码分开 |
+| LOGIN_USER_NAME / LOGIN_PASSWORD | gsgameshare / 独立随机 12 位 | GM 工具登录账号 |
+| PRIVATE_KEY | 独立随机 12 位 | GM 通信私钥 |
+| REDIS_PASSWORD | 独立随机 12 位 | Redis/Valkey 密码 |
+| TLBB_ODBC_BITS / TLBB_ODBC_DRIVER | 自动探测 | 实际选用的驱动位数与路径 |
+
+随机值均包含大写字母、小写字母、数字与符号，五项独立生成。配置目录权限为 `700`，
+主配置及安装中断恢复文件权限为 `600`；安装日志不输出密码。重复执行安装会沿用已保存的随机值，
+显式环境变量可覆盖对应项。RHEL 安装器会迁移旧版本保存的内置弱密码，保留用户自定义密码和已有数据。
+凭据变更后，已有服务端与 GM 配置请重新运行 `setini`、`upgm` 同步。
+
+安装完成前会为已安装的 MySQL、Nginx、PHP-FPM、Redis/Valkey 设置并检查开机自启，
+设置失败会返回错误。CentOS Stream 10 的 Redis 兼容服务为 `valkey.service`，客户端为 `valkey-cli`。
 
 ## 安装内容明细
 
 | 组件 | 说明 | 离线 |
 |---|---|---|
-| MySQL 5.1/5.7/8.0 | el5/6/7 离线 MySQL 5.1；el8 MySQL 5.7；el9/10+8.0；Ubuntu 20+/Debian 8.0（不用 MariaDB） | el6/7 ✅（5.7/8.0 走 pack_offline 生成） |
-| unixODBC | ODBC 管理器（el5/6/7 离线 rpm；el8+/deb 走源或源码） | el5/6/7 ✅ |
-| MySQL ODBC 3.51 驱动 | 32 位 libmyodbc3（服务端必须） | ✅ |
-| MySQL ODBC 5.1 驱动 | 64 位 libmyodbc5（el7+ 管理工具用） | ✅ |
-| glibc.i686 等 32 位兼容库 | 服务端为 32 位进程，必须 | 走系统源 |
+| MySQL 5.1/5.7/8.0/8.4 | el5/6/7 离线 MySQL 5.1；el8 MySQL 5.7；el9 MySQL 8.0；el10 MySQL 8.4；Ubuntu 20+/Debian 8.0（不用 MariaDB 服务端） | el6/7 ✅（其他版本走 pack_offline 生成） |
+| unixODBC | ODBC 管理器；EL8+ 默认安装本机架构，按服务端位数适配驱动 | el5/6/7 ✅；EL8+ 可打包 |
+| MySQL ODBC 3.51 驱动 | 32 位老端兼容驱动，仅适用于提供 i686 运行库的系统 | ✅ |
+| MySQL 兼容 ODBC 驱动 | EL8+ 的 64 位端优先使用系统源 mariadb-connector-odbc，只安装连接器，不替换 MySQL 服务端 | 可打包 |
+| glibc.i686 等 32 位兼容库 | 仅 32 位进程需要；EL10 不支持 i686，请使用 64 位服务端 | 走系统源 |
 | tlbbdb.sql / web.sql | 游戏库表结构 | ✅ |
 | odbc.ini / odbcinst.ini | 自动生成 | ✅ |
 

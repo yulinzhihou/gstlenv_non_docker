@@ -108,7 +108,7 @@ pack_full() {
             # 可选组件 (nginx/php/redis) + unixODBC: 安装器离线查找位置 rpm-packages/<branch>/{odbc,redis,nginx,php}/
             local comp_out="$OFFLINE/rpm-packages/${target}"
             mkdir -p "$comp_out/odbc" "$comp_out/redis" "$comp_out/nginx" "$comp_out/php"
-            $m download --resolve --destdir="$comp_out/odbc" unixODBC unixODBC-devel 2>/dev/null || true
+            $m download --resolve --alldeps --destdir="$comp_out/odbc" unixODBC unixODBC-devel mariadb-connector-odbc 2>/dev/null || true
             $m download --resolve --destdir="$comp_out/redis" redis valkey 2>/dev/null || true
             $m download --resolve --destdir="$comp_out/nginx" nginx 2>/dev/null || true
             $m download --resolve --destdir="$comp_out/php" php php-fpm 2>/dev/null || true

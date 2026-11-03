@@ -22,7 +22,7 @@ if [ ! -f /root/.gs/.env ]; then
     exit 1
 fi
 
-TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:-123456}"
+TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:?环境配置缺少数据库密码}"
 
 while :; do
     echo

@@ -12,7 +12,7 @@
 # 用法 (在任意目标机执行):
 #   bash scripts/verify_offline.sh                 # 自动检测+离线安装+验证
 #   bash scripts/verify_offline.sh --kill-net      # 额外删除默认路由, 严格断网验证
-#   bash scripts/verify_offline.sh --dbpass 123456 # 指定数据库密码
+#   bash scripts/verify_offline.sh --dbpass 自定义密码
 #
 # 流程: 系统识别 -> 离线包完整性检查 -> 断网(可选) -> 离线安装
 #       -> 4 项功能验证 -> 输出 PASS/FAIL 报告
@@ -21,7 +21,7 @@ export LC_ALL=C
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 ROOT="$(dirname "$SCRIPT_DIR")"
 KILL_NET=0
-DBPASS="${TLBB_DB_PASS:-gsgameshare.com}"
+DBPASS="${TLBB_DB_PASS:-}"
 
 log()  { echo -e "\033[32m[验证] $*\033[0m"; }
 warn() { echo -e "\033[33m[警告] $*\033[0m"; }
@@ -91,10 +91,12 @@ if [ "$KILL_NET" = "1" ]; then
 fi
 
 # ---------- 4. 离线安装 ----------
-log "开始离线安装 (MySQL 档位自动匹配, 密码 ${DBPASS})..."
+log "开始离线安装 (MySQL 档位自动匹配, 凭据由安装器私密保存)..."
 START=$(date +%s)
 TLBB_OFFLINE_MODE=1 TLBB_DB_PASS="$DBPASS" bash "$ROOT/install.sh" --offline
 RC=$?
+[ ! -f /root/.gs/.env ] || source /root/.gs/.env
+DBPASS="${TL_MYSQL_PASSWORD:-$DBPASS}"
 END=$(date +%s)
 log "安装命令退出码: ${RC} (耗时 $((END - START)) 秒)"
 
@@ -120,8 +122,8 @@ else
 fi
 # 5.4 Redis
 if command -v redis-cli >/dev/null 2>&1; then
-    RP=$(redis-cli -a "$DBPASS" ping 2>/dev/null || redis-cli ping 2>/dev/null)
-    [ "$RP" = "PONG" ] && v_ok "Redis 运行中 (密码 $DBPASS)" || v_bad "Redis 未响应"
+    RP=$(REDISCLI_AUTH="${REDIS_PASSWORD:-}" redis-cli ping 2>/dev/null)
+    [ "$RP" = "PONG" ] && v_ok "Redis 密码认证通过" || v_bad "Redis 未响应"
 else
     warn "  [SKIP] 系统无 redis-cli (el5/el6 官方无 redis 包)"
 fi

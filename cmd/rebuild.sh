@@ -25,7 +25,7 @@ fi
 TLBB_HOME="${TLBB_HOME:-/tlgame}"
 TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
 BACKUP_DIR="${BACKUP_DIR:-/tlgame/backup}"
-TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:-123456}"
+TL_MYSQL_PASSWORD="${TL_MYSQL_PASSWORD:?环境配置缺少数据库密码}"
 
 backup_all() {
     echo -e "${CYELLOW}正在备份版本与数据库，请稍候……${CEND}"

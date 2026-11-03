@@ -49,7 +49,7 @@ EOF
 GLOBAL_FILE="${TLBB_PATH}/Script/ScriptGlobal.lua"
 if [ -f "${GLOBAL_FILE}" ]; then
     sed -i "s/GMDATA_ISOPEN_GMTOOLS=.*/GMDATA_ISOPEN_GMTOOLS=1/g" "${GLOBAL_FILE}" 2>/dev/null
-    sed -i "s/GMDATA_PRIVATE_KEY=.*/GMDATA_PRIVATE_KEY=${PRIVATE_KEY}/g" "${GLOBAL_FILE}" 2>/dev/null
+    sed -i "s/GMDATA_PRIVATE_KEY=.*/GMDATA_PRIVATE_KEY=\"${PRIVATE_KEY}\"/g" "${GLOBAL_FILE}" 2>/dev/null
 fi
 
 chmod -R 777 /tlgame/www/gm

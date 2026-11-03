@@ -23,12 +23,12 @@ if [ ! -f /root/.gs/.env ]; then
 fi
 
 # root 密码 (可用环境变量 TL_MYSQL_PASSWORD 覆盖)
-ROOT_PW="${TL_MYSQL_PASSWORD:-123456}"
+ROOT_PW="${TL_MYSQL_PASSWORD:?环境配置缺少数据库密码}"
 
 # 参数: mysql-user [用户名] [密码] [授权主机]
-# 默认: 用户 gs, 密码 123456, 主机 0.0.0.0/0 (所有机器)
+# 默认复用配置中的随机游戏账号密码。
 U="${1:-gs}"
-P="${2:-123456}"
+P="${2:-${TLBB_MYSQL_PASSWORD:?环境配置缺少游戏账号密码}}"
 H="${3:-0.0.0.0/0}"
 
 # 授权主机归一化: 0.0.0.0/0 / 0.0.0.0 / % 均视为所有机器, 对应 MySQL 的 '%'
@@ -40,7 +40,7 @@ esac
 # 检测 MySQL 版本 (5.7+/8.x 用 CREATE USER IF NOT EXISTS + ALTER USER; 5.6- 用 GRANT ... IDENTIFIED BY)
 MV=$(mysql -uroot -p"${ROOT_PW}" -N -e "SELECT VERSION();" 2>/dev/null | head -1)
 if [ -z "$MV" ]; then
-    echo -e "${CRED}无法连接 MySQL (root/${ROOT_PW}), 请确认数据库已启动且 root 密码正确 (可用 mysql-lock 重置)${CEND}"
+    echo -e "${CRED}无法连接 MySQL, 请确认数据库已启动且配置中的 root 密码正确${CEND}"
     exit 1
 fi
 MAJ=$(echo "$MV" | cut -d. -f1)

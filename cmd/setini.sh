@@ -132,8 +132,11 @@ BEGIN {
 DBIP_NEW="127.0.0.1"
 DBPort_NEW="${TL_MYSQL_PORT:-3306}"
 DBName_NEW="tlbbdb"
-DBUser_NEW="root"
-DBPassword_NEW="${TL_MYSQL_PASSWORD:-123456}"
+if [[ "${TLBB_MYSQL_VERSION:-}" = 80 || "${TLBB_MYSQL_VERSION:-}" = 84 ]] && [ "${TLBB_DB_LAYOUT:-3}" = 3 ]; then
+    DBName_NEW="tlbbdb_main"
+fi
+DBUser_NEW="${TLBB_MYSQL_USER:-gs}"
+DBPassword_NEW="${TLBB_MYSQL_PASSWORD:-${TL_MYSQL_PASSWORD:?配置文件缺少数据库密码}}"
 
 # LoginInfo.ini [System] 段
 awk -v dbip="$DBIP_NEW" -v dbport="$DBPort_NEW" \
@@ -167,15 +170,16 @@ in_system && /^DBPassword=/ { $0="DBPassword=" dbpassword }
 
 # 自动探测 ODBC 驱动 (优先级: mysql8 -> mysql5 -> myodbc3)
 detect_odbc_driver() {
-    for d in /usr/lib64/libmyodbc8w.so /usr/lib64/libmyodbc5w.so /usr/lib64/libmyodbc.so /usr/lib/libmyodbc5.so /usr/lib/libmyodbc3.so /usr/lib/i386-linux-gnu/libmyodbc3.so; do
+    local d
+    for d in "${TLBB_ODBC_DRIVER:-}" /usr/lib64/libmaodbc.so /usr/lib64/libmyodbc8w.so /usr/lib64/libmyodbc5w.so /usr/lib64/libmyodbc.so /usr/lib/x86_64-linux-gnu/libmaodbc.so /usr/lib/libmyodbc5.so /usr/lib/libmyodbc3.so /usr/lib/i386-linux-gnu/libmyodbc3.so; do
         [ -f "$d" ] && { echo "$d"; return 0; }
     done
-    # 默认 32 位驱动 (服务端 32 位进程必需)
-    echo "/usr/lib/libmyodbc3.so"
+    return 1
 }
-ODBC_DRIVER=$(detect_odbc_driver)
+ODBC_DRIVER=$(detect_odbc_driver) || { echo "未找到已安装的 ODBC 驱动, 请先修复环境"; exit 1; }
 
 # 生成 odbc.ini (写入 /etc)
+touch /etc/odbc.ini && chmod 600 /etc/odbc.ini || exit 1
 cat >/etc/odbc.ini <<EOF
 [tlbbdb]
 Driver		= ${ODBC_DRIVER}
@@ -200,6 +204,22 @@ OPTION		= 3
 SOCKET		=
 
 EOF
+if [ "$DBName_NEW" = tlbbdb_main ]; then
+    for db in tlbbdb_main tlbbdb_10 CHAR_DBTABASE; do
+        target_db=tlbbdb_main
+        [ "$db" != tlbbdb_10 ] || target_db=tlbbdb_10
+        cat >> /etc/odbc.ini <<EOF
+[$db]
+Driver = ${ODBC_DRIVER}
+SERVER = ${DBIP_NEW}
+PORT = ${DBPort_NEW}
+USER = ${DBUser_NEW}
+Password = ${DBPassword_NEW}
+Database = ${target_db}
+
+EOF
+    done
+fi
 
 # 生成 billing config.yaml (原生: /home/billing, 与 run.sh 中的路径一致)
 # bill_type 0经典 1怀旧 (MySQL 8.0/8.4 源端视为怀旧/64位)

@@ -16,6 +16,7 @@
 # ============================================================
 
 source "${BASH_SOURCE[0]%/*}/database.sh"
+source "${BASH_SOURCE[0]%/*}/odbc.sh"
 
 # ---------- RHEL 分支判定包安装器 ----------
 rhel_pkgmgr() {
@@ -133,6 +134,10 @@ rhel_config_repo() {
 
 # ---------- 安装 32 位兼容库 ----------
 rhel_install_compat() {
+    if [ "$SYS_BRANCH" = el10 ]; then
+        log "el10 使用原生 64 位运行环境, 不尝试安装系统不提供的 i686 兼容库"
+        return 0
+    fi
     log "安装 32 位兼容库 (glibc/libstdc++/libnsl/libcrypt)..."
     # 离线模式: 尝试本地 rpm 包目录 (offline/rpm-packages/<elX>/compat/ 或根目录), 否则仅提示
     if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
@@ -183,10 +188,6 @@ rhel_install_compat() {
             # zlib i686 离线 rpm 兜底 (源失效时保证 32 位驱动可加载)
             local zlibrpm; zlibrpm=$(off_get el7/libmyodbc5-64bit zlib-1.2.7-19.el7_9.i686.rpm)
             [ -n "$zlibrpm" ] && rpm -ivh "$zlibrpm" --nodeps --force >/dev/null 2>&1 && log "zlib i686 离线兜底安装完成"
-            ;;
-        el10)
-            warn "el10 不提供 i686 兼容库; 32 位老端请使用 el7/el8/el9, 当前仅适用于 64 位服务端"
-            return 0
             ;;
         el8|el9)
             local m; m=$(rhel_pkgmgr)
@@ -670,50 +671,7 @@ rhel_install_odbc() {
             fi
             ;;
         el8|el9|el10)
-            log "安装 unixODBC (源/离线包) + 离线 32 位 MySQL ODBC 3.51 驱动..."
-            # 离线模式: 从 rpm-packages 本地安装 unixODBC (odbc/ 子目录或根目录)
-            if [ "${TLBB_OFFLINE_MODE:-0}" = "1" ]; then
-                local rdir="$TLBB_OFFLINE_DIR/rpm-packages/$SYS_BRANCH"
-                local odfile; odfile=$(find "$rdir" -maxdepth 2 -name "unixODBC*.rpm" 2>/dev/null | head -1)
-                if [ -n "$odfile" ]; then
-                    for r in "$(dirname "$odfile")"/unixODBC*.rpm; do rpm -ivh "$r" --nodeps --force >/dev/null 2>&1; done
-                    log "离线 unixODBC 安装完成 (来自 $(dirname "$odfile"))"
-                else
-                    # 离线缺失时网络可用则自动在线装 unixODBC
-                    rhel_offline_fallback_online unixODBC "unixODBC" >/dev/null 2>&1 || \
-                        warn "离线模式未找到 unixODBC rpm 且无网络, isql 可能不可用"
-                fi
-            else
-                local m; m=$(rhel_pkgmgr)
-                # 先检测是否已安装, 避免重复安装时的误报警告
-                if command -v isql >/dev/null 2>&1; then
-                    log "unixODBC 64位已存在 (isql 可用), 跳过安装"
-                else
-                    $m -y install unixODBC unixODBC-devel 2>/dev/null || warn "unixODBC(64位) 安装失败"
-                fi
-                # 32 位 unixODBC (可选, el9 老端用 64 位驱动为主)
-                if ls /usr/lib/libodbc.so.* >/dev/null 2>&1; then
-                    log "unixODBC 32位库已存在, 跳过安装"
-                else
-                    $m -y install unixODBC.i686 2>/dev/null || warn "unixODBC(32位) 安装失败 (可选, el9+ 端通常不需要)"
-                fi
-            fi
-            # 32 位驱动复制到 /usr/lib (el8/el9/el10 主要用 64 位驱动, 32 位为可选兼容)
-            local drv; drv=$(off_get el8_el9_el10/libmyodbc3-32bit libmyodbc3-3.51.27.so)
-            [ -z "$drv" ] && drv=$(find / -name "libmyodbc3-3.51.27.so" 2>/dev/null | head -1)
-            if [ -n "$drv" ]; then
-                cp -f "$drv" /usr/lib/libmyodbc3.so 2>/dev/null
-                # SONAME 兼容: 老驱动需要 libodbcinst.so.1 / libodbc.so.1
-                if [ -f /usr/lib/libodbcinst.so.2 ]; then ln -sf /usr/lib/libodbcinst.so.2 /usr/lib/libodbcinst.so.1; fi
-                if [ -f /usr/lib/libodbc.so.2 ]; then ln -sf /usr/lib/libodbc.so.2 /usr/lib/libodbc.so.1; fi
-                ln -sf /usr/lib/libmyodbc3.so /usr/lib/libmyodbc3-3.51.27.so 2>/dev/null
-            elif ls /usr/lib64/libmaodbc.so >/dev/null 2>&1 || ls /usr/lib64/libmyodbc.so >/dev/null 2>&1; then
-                # el9+ 使用 64 位驱动 (libmaodbc.so = mariadb-connector-odbc, 或 libmyodbc.so)
-                log "64 位 MySQL ODBC 驱动已就位 (/usr/lib64), 32 位驱动非必需 (el9+ 端为 64 位进程)"
-            else
-                warn "未找到 MySQL ODBC 驱动 (32 位 libmyodbc3 或 64 位 libmaodbc/libmyodbc)"
-                warn "离线模式请确保 rpm-packages/$SYS_BRANCH 内含 mariadb-connector-odbc (libmaodbc.so) 或在线安装 mysql-connector-odbc"
-            fi
+            rhel_install_modern_odbc || return 1
             ;;
     esac
 }
@@ -722,12 +680,10 @@ rhel_install_odbc() {
 rhel_config_odbc() {
     log "配置 /etc/odbc.ini ..."
     mkdir -p /etc
-    # 驱动自动检测: 64 位 libmaodbc (MySQL8 ODBC) → 64 位 libmyodbc → 32 位 libmyodbc3
-    local drvpath=""
-    for c in /usr/lib64/libmaodbc.so /usr/lib64/libmyodbc.so /usr/lib/libmyodbc3.so; do
-        [ -f "$c" ] && { drvpath="$c"; break; }
-    done
-    [ -z "$drvpath" ] && drvpath="/usr/lib/libmyodbc3.so"
+    TLBB_ODBC_BITS=$(rhel_odbc_bits) || return 1
+    local drvpath
+    drvpath=$(rhel_find_odbc_driver "$TLBB_ODBC_BITS") || return 1
+    TLBB_ODBC_DRIVER="$drvpath"
     # 按 2/3 库结构决定主库名与是否含 tlbbdb_10 (与建库一致)
     local mver; mver=$(select_mysql_version)
     local dblayout="${TLBB_DB_LAYOUT:-3}"
@@ -741,14 +697,15 @@ rhel_config_odbc() {
         game_db="tlbbdb_10"
         log "检测到武道四 v3 端 (luoluo 目录), 启用四段 DSN 映射"
     fi
+    touch /etc/odbc.ini && chmod 600 /etc/odbc.ini || return 1
     cat > /etc/odbc.ini <<INI
 [tlbbdb_main]
 Driver          = $drvpath
 Description     = TLBB Main DB (角色库)
 SERVER          = 127.0.0.1
-PORT            = 3306
-USER            = root
-Password        = ${TLBB_DB_PASS}
+PORT            = ${TLBB_MYSQL_PORT:-3306}
+USER            = ${TLBB_MYSQL_USER}
+Password        = ${TLBB_MYSQL_PASSWORD}
 Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
@@ -757,9 +714,9 @@ SOCKET          =
 Driver          = $drvpath
 Description     = TLBB Game DB
 SERVER          = 127.0.0.1
-PORT            = 3306
-USER            = root
-Password        = ${TLBB_DB_PASS}
+PORT            = ${TLBB_MYSQL_PORT:-3306}
+USER            = ${TLBB_MYSQL_USER}
+Password        = ${TLBB_MYSQL_PASSWORD}
 Database        = ${game_db}
 OPTION          = 3
 SOCKET          =
@@ -771,9 +728,9 @@ INI
 Driver          = $drvpath
 Description     = TLBB Game DB (动态库)
 SERVER          = 127.0.0.1
-PORT            = 3306
-USER            = root
-Password        = ${TLBB_DB_PASS}
+PORT            = ${TLBB_MYSQL_PORT:-3306}
+USER            = ${TLBB_MYSQL_USER}
+Password        = ${TLBB_MYSQL_PASSWORD}
 Database        = tlbbdb_10
 OPTION          = 3
 SOCKET          =
@@ -785,30 +742,29 @@ INI
 Driver          = $drvpath
 Description     = TLBB Char DB
 SERVER          = 127.0.0.1
-PORT            = 3306
-USER            = root
-Password        = ${TLBB_DB_PASS}
+PORT            = ${TLBB_MYSQL_PORT:-3306}
+USER            = ${TLBB_MYSQL_USER}
+Password        = ${TLBB_MYSQL_PASSWORD}
 Database        = ${main_db}
 OPTION          = 3
 SOCKET          =
 INI
-    cat > /etc/odbcinst.ini <<INI
-[ODBC Drivers]
-MySQL ODBC 3.51 Driver=Installed
-MySQL ODBC 5.1 Driver 64=Installed
-
-[MySQL ODBC 3.51 Driver]
+    local registration
+    registration=$(mktemp) || return 1
+    cat > "$registration" <<INI
+[TLBB MySQL]
+Description=TLBB ${TLBB_ODBC_BITS} bit MySQL-compatible ODBC
 Driver=$drvpath
-Setup=/usr/lib/libmyodbc3S.so
-UsageCount=1
-
-[MySQL ODBC 5.1 Driver 64]
-Driver=/usr/lib64/libmyodbc.so
-Setup=/usr/lib64/libmyodbcS.so
 UsageCount=1
 INI
-    chmod 644 /etc/my.cnf 2>/dev/null
-    log "ODBC 配置完成"
+    odbcinst -i -d -f "$registration" || { rm -f "$registration"; return 1; }
+    rm -f "$registration"
+    if [ "$TLBB_ODBC_BITS" = "$(getconf LONG_BIT)" ]; then
+        printf 'SELECT 1;\n' | isql -b tlbbdb >/dev/null || {
+            err "ODBC DSN tlbbdb 实际连接失败" >&2; return 1;
+        }
+    fi
+    log "ODBC 配置完成, 已验证 ${TLBB_ODBC_BITS} 位驱动与数据库连接"
 }
 
 # ---------- 验证 ----------
@@ -817,8 +773,8 @@ rhel_verify() {
     local ok=0 total=5
     rhel_mysql "$TLBB_DB_PASS" -Nse 'SELECT 1;' </dev/null >/dev/null 2>&1 && \
         { info "  [OK] 数据库运行中且 root 密码认证通过"; ok=$((ok+1)); } || warn "  [!!] 数据库连接或认证失败"
-    if ls /usr/lib/libmyodbc3.so >/dev/null 2>&1 || ls /usr/lib64/libmaodbc.so >/dev/null 2>&1 || ls /usr/lib64/libmyodbc.so >/dev/null 2>&1; then
-        info "  [OK] MySQL ODBC 驱动就位 (32位 libmyodbc3 / 64位 libmaodbc|libmyodbc)"
+    if rhel_find_odbc_driver "${TLBB_ODBC_BITS:-64}" >/dev/null; then
+        info "  [OK] ${TLBB_ODBC_BITS:-64} 位 MySQL ODBC 驱动及依赖就位"
         ok=$((ok+1))
     fi
     command -v isql >/dev/null 2>&1 && { info "  [OK] unixODBC isql 可用"; ok=$((ok+1)); }
@@ -827,7 +783,7 @@ rhel_verify() {
     local main_db="tlbbdb"
     { [ "$mver" = "80" ] || [ "$mver" = "84" ]; } && [ "${TLBB_DB_LAYOUT:-3}" = "3" ] && main_db="tlbbdb_main"
     local t
-    t=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use ${main_db}; show tables;" 2>/dev/null | wc -l)
+    t=$(rhel_mysql "$TLBB_DB_PASS" -Nse "SHOW TABLES FROM ${main_db};" 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] ${main_db} 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] ${main_db} 无表(需手动导入)"
     t=$(rhel_mysql "$TLBB_DB_PASS" -Nse 'SHOW TABLES FROM web;' 2>/dev/null | wc -l)
     [ "$t" -gt 0 ] && { info "  [OK] web 含 ${t} 张表"; ok=$((ok+1)); } || warn "  [!!] web 无表"
@@ -835,7 +791,7 @@ rhel_verify() {
         if [ "${TLBB_DB_LAYOUT:-3}" = "3" ]; then
             total=$((total+1))
             local t10
-            t10=$(mysql -uroot -p"${TLBB_DB_PASS}" -N -e "use tlbbdb_10; show tables;" 2>/dev/null | wc -l)
+            t10=$(rhel_mysql "$TLBB_DB_PASS" -Nse 'SHOW TABLES FROM tlbbdb_10;' 2>/dev/null | wc -l)
             [ "$t10" -gt 0 ] && { info "  [OK] tlbbdb_10 含 ${t10} 张表"; ok=$((ok+1)); } || warn "  [!!] tlbbdb_10 无表(需手动导入)"
         fi
     fi
@@ -877,11 +833,11 @@ rhel_offline_fallback_online() {
     return 1
 }
 
-# ---------- 可选组件: redis (billing/GM 工具依赖, 密码默认 gsgameshare.com) ----------
+# ---------- 可选组件: redis (billing/GM 工具依赖, 使用持久化随机密码) ----------
 # el10 官方 AppStream/EPEL 已无 redis 服务器包 (RHEL 10 生态以 Valkey 8 替代, RESP 协议兼容),
 # 在线/离线均自动回退 valkey (命令 valkey-server/valkey-cli, 端口与 requirepass 配置一致)
 rhel_install_redis() {
-    local rp="${TLBB_REDIS_PASSWORD:-gsgameshare.com}"
+    local rp="${TLBB_REDIS_PASSWORD:?请先初始化服务凭据}"
     if rpm -q redis >/dev/null 2>&1 || command -v redis-server >/dev/null 2>&1 || \
        rpm -q valkey >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1; then
         log "Redis/Valkey 已安装, 跳过安装"
@@ -905,7 +861,7 @@ rhel_install_redis() {
     fi
     command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1 || return 1
     local rcli="redis-cli"; command -v valkey-cli >/dev/null 2>&1 && rcli="valkey-cli"
-    # 设置密码 (对齐 .env REDIS_PASSWORD, 默认 gsgameshare.com; 配置文件路径兼容 redis/valkey)
+    # 密码来自持久化凭据, 配置文件路径兼容 redis/valkey。
     local rconf=""
     [ -f /etc/redis.conf ] && rconf=/etc/redis.conf
     [ -f /etc/redis/redis.conf ] && rconf=/etc/redis/redis.conf
@@ -977,7 +933,7 @@ rhel_install_php() {
         return 1
     fi
     # 启动 php-fpm (el8+ 为 php-fpm, el6 为 php-fpm; 老系统无 systemctl 时用 service)
-    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files php-fpm >/dev/null 2>&1; then
+    if command -v systemctl >/dev/null 2>&1; then
         systemctl enable --now php-fpm || return 1
     else
         service php-fpm start || return 1
@@ -990,7 +946,10 @@ rhel_install_optional() {
     local comp var
     for comp in nginx php redis; do
         var="TLBB_OPT_$(printf '%s' "$comp" | tr '[:lower:]' '[:upper:]')"
-        if [ "$(ask_optional_component "$comp" "安装系统源软件包并验证服务" "$var")" = "1" ]; then
+        if [ "$comp" = redis ] && { command -v redis-server >/dev/null 2>&1 || command -v valkey-server >/dev/null 2>&1; }; then
+            log "同步已安装 Redis/Valkey 的持久化凭据"
+            rhel_install_redis || TLBB_OPTIONAL_FAILED=1
+        elif [ "$(ask_optional_component "$comp" "安装系统源软件包并验证服务" "$var")" = "1" ]; then
             "rhel_install_${comp}" || TLBB_OPTIONAL_FAILED=1
         fi
     done
@@ -1008,7 +967,7 @@ rhel_install() {
     rhel_start_db || die "MySQL 启动失败, 未更动现有数据目录"
     rhel_setup_db || die "MySQL 认证/建库/导入未完成, 请检查上方具体错误"
     rhel_install_optional   # nginx/php/redis 可选组件 (交互询问, 默认不安装)
-    rhel_install_odbc
-    rhel_config_odbc
-    rhel_verify
+    rhel_install_odbc || die "ODBC 安装未完成, 请检查软件包或架构错误"
+    rhel_config_odbc || die "ODBC 配置或连接验证失败"
+    rhel_verify || die "环境验证未通过"
 }
