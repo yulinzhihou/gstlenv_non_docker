@@ -210,7 +210,10 @@ main() {
                 echo -e "${CSUCCESS}  已卸载: MySQL / Redis / ODBC / 全局命令${CEND}"
                 echo -e "${CSUCCESS}  数据库 SQL 已备份至 /root/tlbbdb_backup_* (含版本信息)${CEND}"
                 echo -e "${CSUCCESS}  数据已自动备份为 .removed / -时间戳 后缀${CEND}"
-                echo -e "${CSUCCESS}  如需重新安装, 请重新下载环境包执行安装${CEND}"
+                echo ""
+                echo -e "${CYELLOW}  如需重新安装环境, 请重新输入以下命令一键安装 (对齐 gstlenv):${CEND}"
+                echo -e "${CSUCCESS}    curl -fsSL https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/gsenv.sh | bash${CEND}"
+                echo -e "${CYELLOW}  离线场景: 将 offline-*.tar.gz / tlbb离线组件*.zip 放到 /root 后执行上述命令 (自动解压并离线安装)${CEND}"
                 echo -e "${CSUCCESS}========================================${CEND}"
                 exit 0
             else
