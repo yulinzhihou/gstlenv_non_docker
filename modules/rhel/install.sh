@@ -479,12 +479,15 @@ rhel_install_db() {
                 fi
             # el9 (CentOS Stream 9 / RHEL9+ / Rocky/Alma 9): 系统 AppStream 自带 MySQL 8.0 包,
             # 官方源 el9 目录结构已变更易 404, 优先走系统源 (实测 CentOS Stream 9 mysql-server=8.0.46)
-            elif [ "$rel8" -ge 9 ] 2>/dev/null && rhel_pkg_install mysql-server; then
-                log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
-            elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
-                rhel_download_mysql_rpm 80 "$rel8" || \
-                rhel_fallback_offline_rpm || die "MySQL 8.0 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
-            fi
+            # 离线模式网络可用时也强制配置国内源走系统源 (避免直下兜底引入旧版/混装)
+            elif [ "$rel8" -ge 9 ] 2>/dev/null; then
+                [ "${TLBB_OFFLINE_MODE:-0}" = "1" ] && rhel_config_repo force >/dev/null 2>&1
+                if rhel_pkg_install mysql-server; then
+                    log "MySQL 8.0 通过系统源 (AppStream mysql-server) 安装完成"
+                elif ! rhel_config_mysql_repo 80 || ! rhel_pkg_install mysql-community-server; then
+                    rhel_download_mysql_rpm 80 "$rel8" || \
+                    rhel_fallback_offline_rpm || die "MySQL 8.0 安装失败(源/直下/离线包均失败, 请检查网络或 offline/ 目录)"
+                fi
             ;;
         84)
             log "安装 MySQL 8.4 (官方/国内镜像源)..."
@@ -541,9 +544,38 @@ rhel_start_db() {
         mysqladmin ping </dev/null >/dev/null 2>&1 && { log "数据库已就绪"; return 0; }
         sleep 2
     done
-    warn "数据库未完全就绪, 继续尝试..."
-    # 输出 mysqld 日志便于定位 (缺依赖/初始化失败等)
+    # 启动失败: 自动清理旧版本(混装/坏包)并重装最新版, 一次性自愈 (防递归)
+    if [ "${TLBB_MYSQL_REPAIRED:-0}" != "1" ]; then
+        warn "数据库未完全就绪, 自动修复: 清理旧 MySQL 包与残留 datadir 后重装最新版..."
+        TLBB_MYSQL_REPAIRED=1
+        rhel_repair_mysql
+        return 0
+    fi
+    warn "数据库仍未就绪, 输出 mysqld 日志便于定位:"
     journalctl -u mysqld --no-pager -n 10 2>/dev/null | tail -5 >&2 || true
+}
+
+# ---------- MySQL 启动失败自愈 ----------
+# 场景: 旧版残留(如 8.0.30 el9 包在 Stream 9 上 initialize segfault) / 混版本安装 /
+#       datadir 半初始化残留. 卸载全部 mysql 包 -> 备份清理 datadir -> 重新安装最新版并启动
+rhel_repair_mysql() {
+    local m; m=$(rhel_pkgmgr)
+    systemctl stop mysqld >/dev/null 2>&1 || systemctl stop mysql >/dev/null 2>&1 || true
+    pkill -9 mysqld 2>/dev/null || true
+    sleep 1
+    # 卸载全部 mysql 相关包 (官方版 + 系统自带版)
+    $m remove -y mysql-community-* mysql-server mysql mysql-libs mysql-common mysql-errmsg 2>/dev/null || true
+    rpm -qa 2>/dev/null | grep -E '^(mysql|mysql-community)' | xargs -r rpm -e --nodeps 2>/dev/null || true
+    # 备份并清理残留 datadir / 配置文件 (避免半初始化数据干扰新版本首启)
+    local bak="/var/lib/mysql.broken.$(date +%s)"
+    [ -d /var/lib/mysql ] && mv /var/lib/mysql "$bak" 2>/dev/null || true
+    rm -rf /var/lib/mysql-files /var/lib/mysql-keyring /var/lib/mysql-community* 2>/dev/null || true
+    rm -f /etc/my.cnf /etc/my.cnf.d/*.cnf 2>/dev/null || true
+    # 清除 rpm 缓存中的旧包
+    $m clean all >/dev/null 2>&1 || true
+    log "已清理旧 MySQL (datadir 备份: ${bak}), 重新安装最新版..."
+    rhel_install_mysql
+    rhel_start_db
 }
 
 # ---------- MySQL 5.7/8.0 首启临时密码处理 ----------
