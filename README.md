@@ -234,7 +234,7 @@ setpoint point 5000 账号  # 设置充值点数（类型: point/yuanbao/zengdia
 swap 4                    # 增加 4GB 虚拟内存（默认 4G）
 change                    # 换端
 rebuild                   # 重构环境
-remove                    # 移除环境
+remove                    # 移除环境（卸载前自动备份 web/tlbbdb/tlbbdb_10/tlbbdb_11/tlbbdb_12/tlbbdb_main 库 SQL+版本信息到 /root/tlbbdb_backup_*）
 gsbak                     # 定时备份（默认 1 小时一次，保留 10 份）
 delbak 5                  # 删除旧备份（保留 5 份）
 logbak cron 1 10          # 定时日志备份（1 小时一次，保留 10 份）
@@ -265,7 +265,7 @@ transfer                  # 重新构建环境版本（1=CS6+5.1 2=CS7+5.1 3=CS7
 | 05 | link | docker-compose exec 进容器 | 直接进入 /tlgame/tlbb 服务端目录（原生无容器） |
 | 06 | swap | 容器内加 swap | 本机增加虚拟内存（/usr/swap/swapfile，默认 4G） |
 | 07 | rebuild | 重建容器 | 重构本机环境（备份→重置数据库→还原→写配置） |
-| 08 | remove | docker rm 容器 | 移除本机环境与命令（数据迁移保留） |
+| 08 | remove | docker rm 容器 | 移除本机环境与命令（卸载前备份数据库 SQL+版本信息到 /root，数据目录迁移保留） |
 | 09 | setconfig | 重写容器配置 | 重写 /root/.gs/.env 端口/密码 + 改数据库密码 |
 | 10 | change | 容器换端 | 本机备份换端（untar→reset→setini→runtlbb） |
 | 11 | restart | docker restart | 本机重启数据库+服务端 |

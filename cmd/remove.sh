@@ -4,7 +4,7 @@
 # Project: https://github.com/yulinzhihou/gstlenv_non_docker.git
 # Date :  2026-11-03
 # Notes:  gstlenv_non_docker - 天龙八部服务端环境万能安装器 (非 Docker 原生版), 支持 RHEL/Debian/Ubuntu/Fedora/OpenEuler, 在线/离线双模式
-# comment: 移除整个环境，彻底卸载所有组件 (原生: 停服/移除命令/卸载软件/删除配置/迁移数据目录)
+# comment: 移除整个环境，彻底卸载所有组件 (原生: 备份库SQL到/root → 停服/移除命令/卸载软件/删除配置/迁移数据目录)
 
 # 设置字符编码，确保中文正常显示
 {
@@ -96,6 +96,63 @@ uninstall_commands() {
     echo -e "${CGREEN}    全局命令已移除${CEND}"
 }
 
+# 备份 MySQL 数据库 SQL + 版本信息到 /root (remove 第一步, 卸载 MySQL 前执行)
+# 备份 web/tlbbdb/tlbbdb_10/tlbbdb_11/tlbbdb_12/tlbbdb_main (仅备份实际存在的库,
+# 兼容 2库/3库/自定义结构), 输出 /root/tlbbdb_backup_<时间戳>/ 及同名 .tar.gz
+backup_sql() {
+    echo -e "${CYELLOW}  → 备份 MySQL 数据库到 /root ...${CEND}"
+    local dbpass="${TLBB_DB_PASS:-123456}"
+    local bkdir="/root/tlbbdb_backup_$(date +%Y%m%d%H%M%S)"
+    mkdir -p "$bkdir" 2>/dev/null || { echo -e "${CWARNING}    无法创建备份目录 $bkdir, 跳过 SQL 备份${CEND}"; return 0; }
+
+    # 确保 MySQL 运行中 (卸载前先备份)
+    if ! mysqladmin ping >/dev/null 2>&1; then
+        systemctl start mysqld >/dev/null 2>&1 || systemctl start mysql >/dev/null 2>&1 || true
+        sleep 3
+    fi
+    if ! mysqladmin ping >/dev/null 2>&1; then
+        echo -e "${CWARNING}    MySQL 未运行, 跳过 SQL 备份 (数据目录仍会由卸载流程自动备份为 .removed 后缀)${CEND}"
+        rmdir "$bkdir" 2>/dev/null || true
+        return 0
+    fi
+
+    # 登录方式: 优先 .env 密码, 失败回退 root 无密登录
+    local mauth=(-uroot -p"$dbpass")
+    mysql "${mauth[@]}" -e "SELECT 1" >/dev/null 2>&1 || mauth=(-uroot)
+
+    # 逐库备份 (仅备份实际存在的库)
+    local dbs=(web tlbbdb tlbbdb_10 tlbbdb_11 tlbbdb_12 tlbbdb_main)
+    local n=0 db
+    for db in "${dbs[@]}"; do
+        if mysql "${mauth[@]}" -N -e "SHOW DATABASES LIKE '${db}'" 2>/dev/null | grep -q "^${db}$"; then
+            mysqldump "${mauth[@]}" --databases "$db" --single-transaction --quick --routines > "${bkdir}/${db}.sql" 2>/dev/null \
+                && { echo -e "${CGREEN}    ${db} 已备份: ${bkdir}/${db}.sql${CEND}"; n=$((n + 1)); } \
+                || echo -e "${CWARNING}    ${db} 备份失败 (已跳过)${CEND}"
+        fi
+    done
+    [ "$n" -eq 0 ] && { echo -e "${CWARNING}    没有可备份的业务数据库 (MySQL 为空或仅系统库)${CEND}"; rm -rf "$bkdir" 2>/dev/null || true; return 0; }
+
+    # 版本信息 (MySQL 版本 + 环境版本参数), 便于恢复时匹配对应档位
+    local mver=""
+    mver=$(mysql "${mauth[@]}" -N -e "SELECT VERSION()" 2>/dev/null | head -1)
+    cat > "${bkdir}/version.txt" <<EOF
+# TLBB 环境数据库备份信息 (由 remove 命令卸载前自动生成)
+备份时间: $(date '+%Y-%m-%d %H:%M:%S')
+MySQL 版本: ${mver}
+TLBB_MYSQL_VERSION: ${TLBB_MYSQL_VERSION:-unknown}
+备份目录: ${bkdir}
+数据库列表: web tlbbdb tlbbdb_10 tlbbdb_11 tlbbdb_12 tlbbdb_main (仅实际存在的库)
+恢复方式: mysql -uroot -p<密码> < ${bkdir}/<库名>.sql
+EOF
+
+    # 打包到 /root (保留源目录以便单独恢复)
+    local tarball="${bkdir}.tar.gz"
+    tar czf "$tarball" -C /root "$(basename "$bkdir")" 2>/dev/null \
+        && echo -e "${CGREEN}    已打包: ${tarball}${CEND}" \
+        || echo -e "${CWARNING}    打包失败 (SQL 目录仍保留在 ${bkdir})${CEND}"
+    echo -e "${CSUCCESS}    共备份 ${n} 个数据库到 /root (SQL + 版本信息)${CEND}"
+}
+
 main() {
     for ((time = 5; time >= 0; time--)); do
         echo -ne "\r在准备正行移除环境操作！！，剩余 ${CRED}$time${CEND} 秒，可以在计时结束前，按 CTRL+C 退出！"
@@ -104,7 +161,7 @@ main() {
     echo
     while :; do
         echo -e "${CYELLOW}请输入 [y/n] 是否确认移除环境, 默认[n]取消${CEND}"
-        echo -e "${CYELLOW}提示: 将彻底卸载 MySQL/Redis/ODBC 及所有全局命令, 数据目录会自动备份${CEND}"
+        echo -e "${CYELLOW}提示: 卸载前将先把 web/tlbbdb/tlbbdb_10/tlbbdb_11/tlbbdb_12/tlbbdb_main 数据库备份为 SQL 到 /root, 然后彻底卸载 MySQL/Redis/ODBC 及所有全局命令, 数据目录自动备份${CEND}"
         read -e -p "${CYELLOW}请输入确认信息 [y/n]:${CEND} " IS_MODIFY
         IS_MODIFY=${IS_MODIFY:-'n'}
         if [[ ! ${IS_MODIFY} =~ ^[y,n]$ ]]; then
@@ -118,36 +175,40 @@ main() {
                 echo -e "${CYELLOW}  → 关闭游戏服务端 ...${CEND}"
                 close >/dev/null 2>&1 || true
 
-                # 2. 卸载软件组件
+                # 2. 备份数据库 SQL + 版本信息到 /root (卸载 MySQL 前执行)
+                backup_sql
+
+                # 3. 卸载软件组件
                 uninstall_mysql
                 uninstall_redis
                 uninstall_odbc
 
-                # 3. 移除全局命令
+                # 4. 移除全局命令
                 uninstall_commands
 
-                # 4. 删除环境配置目录
+                # 5. 删除环境配置目录
                 echo -e "${CYELLOW}  → 删除环境配置 ...${CEND}"
                 rm -rf /root/.gs 2>/dev/null || true
 
-                # 5. 迁移数据目录 (保留数据, 可手动恢复)
+                # 6. 迁移数据目录 (保留数据, 可手动恢复)
                 echo -e "${CYELLOW}  → 备份服务端数据目录 ...${CEND}"
                 if [ -d ${TLBB_HOME} ]; then
                     mv ${TLBB_HOME} ${TLBB_HOME}-$(date +%Y%m%d%H%I%S) 2>/dev/null || true
                     echo -e "${CGREEN}    数据目录已备份为 ${TLBB_HOME}-*${CEND}"
                 fi
 
-                # 6. 移除 crontab 中的备份任务
+                # 7. 移除 crontab 中的备份任务
                 echo -e "${CYELLOW}  → 清理定时任务 ...${CEND}"
                 crontab -l 2>/dev/null | grep -v "/usr/local/bin/backup" | grep -v "/usr/local/bin/delbak" | grep -v "/usr/local/bin/logbak" | crontab - 2>/dev/null || true
 
-                # 7. 删除环境安装目录
+                # 8. 删除环境安装目录
                 rm -rf /root/.tlgame 2>/dev/null || true
 
                 echo ""
                 echo -e "${CSUCCESS}========================================${CEND}"
                 echo -e "${CSUCCESS}  环境彻底移除完成!${CEND}"
                 echo -e "${CSUCCESS}  已卸载: MySQL / Redis / ODBC / 全局命令${CEND}"
+                echo -e "${CSUCCESS}  数据库 SQL 已备份至 /root/tlbbdb_backup_* (含版本信息)${CEND}"
                 echo -e "${CSUCCESS}  数据已自动备份为 .removed / -时间戳 后缀${CEND}"
                 echo -e "${CSUCCESS}  如需重新安装, 请重新下载环境包执行安装${CEND}"
                 echo -e "${CSUCCESS}========================================${CEND}"
