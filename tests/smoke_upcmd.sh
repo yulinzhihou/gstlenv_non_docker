@@ -13,6 +13,7 @@ mkdir -p /root/.gs /tmp/gs-project/cmd /tmp/upcmd-remote/repository/cmd
 printf 'GS_PROJECT=/tmp/gs-project\nTLBB_PATH=/tlgame/tlbb\n' > /root/.gs/.env
 cp /root/.gs/.env /tmp/env-before
 cp /work/cmd/*.sh /tmp/upcmd-remote/repository/cmd/
+cp -a /work/assets /tmp/upcmd-remote/repository/assets
 tar -czf /tmp/remote-commands.tar.gz -C /tmp/upcmd-remote repository
 for file in /work/cmd/*.sh; do
     name="${file##*/}"
@@ -44,6 +45,7 @@ for file in /work/cmd/*.sh; do
     same_content "$file" "/tmp/gs-project/cmd/$name"
     same_content "$file" "/usr/local/bin/${name%.sh}"
 done
+same_content /work/assets/billing/billing64 /tmp/gs-project/assets/billing/billing64
 same_content /tmp/env-before /root/.gs/.env
 echo 'PASS: actual online updater replaces stale local commands and itself without changing .env'
 

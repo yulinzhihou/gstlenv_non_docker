@@ -10,6 +10,7 @@ fixture() {
     case_dir="$WORK/$1"
     mkdir -p "$case_dir/source" "$case_dir/project/cmd" "$case_dir/bin"
     cp "$ROOT"/cmd/*.sh "$case_dir/source/"
+    cp -a "$ROOT/assets" "$case_dir/assets"
     for name in "$case_dir/source"/*.sh; do
         name="${name##*/}"
         printf '#!/usr/bin/env bash\n# stale local fixture\n' > "$case_dir/project/cmd/$name"
@@ -20,10 +21,18 @@ fixture() {
 snapshot() {
     cp -a "$case_dir/project/cmd" "$case_dir/before-cmd"
     cp -a "$case_dir/bin" "$case_dir/before-bin"
+    if [ -d "$case_dir/project/assets" ]; then
+        cp -a "$case_dir/project/assets" "$case_dir/before-assets"
+    fi
 }
 unchanged() {
     diff -r "$case_dir/before-cmd" "$case_dir/project/cmd"
     diff -r "$case_dir/before-bin" "$case_dir/bin"
+    if [ -d "$case_dir/before-assets" ]; then
+        diff -r "$case_dir/before-assets" "$case_dir/project/assets"
+    elif [ -d "$case_dir/project/assets" ]; then
+        [ -z "$(find "$case_dir/project/assets" -type f -print -quit)" ]
+    fi
     [ "$(stat -c %a "$case_dir/bin/untar")" = 700 ]
     ! grep -q '已校验 .* 个命令' "$case_dir/failure.log"
 }
@@ -43,6 +52,7 @@ for file in "$case_dir/source"/*.sh; do
 done
 [ "$(<"$case_dir/project/.env")" = keep ]
 [ "$(<"$case_dir/bin/unrelated")" = keep ]
+diff -r "$ROOT/assets" "$case_dir/project/assets"
 grep -Fq "安装目录: $case_dir/bin" "$case_dir/success.log"
 grep -q '命令清单 SHA256: [a-f0-9]\{64\}' "$case_dir/success.log"
 grep -q 'untar SHA256: [a-f0-9]\{64\}' "$case_dir/success.log"
@@ -70,6 +80,30 @@ snapshot
 if deploy > "$case_dir/failure.log" 2>&1; then exit 1; fi
 unchanged
 echo 'PASS: missing, symlinked or syntactically invalid command sources never alter either destination'
+
+fixture missing-assets
+rm "$case_dir/assets/billing/billing64"
+snapshot
+if deploy > "$case_dir/failure.log" 2>&1; then exit 1; fi
+unchanged
+fixture corrupt-assets
+printf broken >> "$case_dir/assets/billing/billing64"
+snapshot
+if deploy > "$case_dir/failure.log" 2>&1; then exit 1; fi
+unchanged
+(
+    fixture asset-install-failure
+    cp -a "$ROOT/assets" "$case_dir/project/assets"
+    printf old >> "$case_dir/project/assets/billing/billing64"
+    snapshot
+    mv() {
+        [[ "${*: -1}" != "$case_dir/project/assets/billing/README.md" || "${*: -2:1}" != */new/assets/README.md ]] || return 1
+        command mv "$@"
+    }
+    if deploy > "$case_dir/failure.log" 2>&1; then exit 1; fi
+    unchanged
+)
+echo 'PASS: missing/corrupt Billing assets abort updates; asset installation failure rolls back assets and all commands together'
 
 for kind in symlink directory; do
     fixture "target-$kind"
@@ -160,6 +194,7 @@ echo 'PASS: termination rolls back commands; unsuccessful rollback preserves and
 
 mkdir -p "$WORK/remote/repository/cmd"
 cp "$ROOT"/cmd/*.sh "$WORK/remote/repository/cmd/"
+cp -a "$ROOT/assets" "$WORK/remote/repository/assets"
 tar -czf "$WORK/remote.tar.gz" -C "$WORK/remote" repository
 (
     curl() { return 22; }

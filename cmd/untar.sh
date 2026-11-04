@@ -139,7 +139,22 @@ untar_main() {
         else untar_error "请上传 /root/tlbb.tar.gz 或 /root/tlbb.zip, 也可执行 untar /绝对路径/压缩包"; return 1
         fi
     fi
-    untar_deploy "$archive" "${TLBB_PATH:-${TLBB_HOME:-/tlgame}/tlbb}" "${BACKUP_DIR:-/root}"
+    [ -f "$archive" ] || { untar_error "未找到压缩包: $archive"; return 1; }
+    if [ "${IS_DLQ:-0}" = 0 ]; then
+        local helper loaded=0
+        for helper in "$(dirname -- "${BASH_SOURCE[0]}")/billing-env.sh" /usr/local/bin/billing-env "${GS_PROJECT:-/root/.tlgame}/cmd/billing-env.sh"; do
+            [ -f "$helper" ] || continue
+            source "$helper" || return 1
+            loaded=1; break
+        done
+        [ "$loaded" = 1 ] || { untar_error "缺少 Billing 部署组件, 请执行 upcmd 更新命令"; return 1; }
+        billing_prepare "${GS_PROJECT:-/root/.tlgame}" "${TLBB_HOME:-/tlgame}/billing" \
+            /home/billing /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || return 1
+    else
+        printf 'W机验证模式: 不部署或启动本机 Billing。\n'
+    fi
+    untar_deploy "$archive" "${TLBB_PATH:-${TLBB_HOME:-/tlgame}/tlbb}" "${BACKUP_DIR:-/root}" || return 1
+    printf '%s\n' "${CSUCCESS:-}服务端文件已经解压成功！接下来执行【setini】写入配置文件；如需在线GM, 执行【upgm】配置, 最后执行【runtlbb】开服。${CEND:-}"
 }
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then

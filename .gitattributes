@@ -1,3 +1,5 @@
 *.sh text eol=lf
 *.repo text eol=lf
 *.sql text eol=lf
+assets/billing/billing32 binary
+assets/billing/billing64 binary

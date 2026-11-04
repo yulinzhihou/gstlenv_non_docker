@@ -4,6 +4,7 @@ set -euo pipefail
 [ -f /.dockerenv ] && [ "${TLBB_TEST_ALLOW_INSTALL:-0}" = 1 ] || exit 1
 mkdir -p /root/.gs /tmp/archive-fixture/wrapper/tlbb2/Server/Config /tmp/gs-project
 printf 'TLBB_PATH=/tlgame/tlbb\nGS_PROJECT=/tmp/gs-project\n' > /root/.gs/.env
+cp -a /work/assets /tmp/gs-project/assets
 cp /work/cmd/color.sh /usr/local/bin/color
 for file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
     printf '[System]\nDBIP=old\n' > "/tmp/archive-fixture/wrapper/tlbb2/Server/Config/$file"
@@ -29,6 +30,7 @@ echo 'PASS: actual setini command reports configured paths and native issue link
 
 printf 'TLBB_PATH=/tlgame/tlbb\nGS_PROJECT=/tmp/gs-project\nTL_MYSQL_PASSWORD=fixture-only\n' > /root/.gs/.env
 cp /work/cmd/untar.sh /usr/local/bin/untar
+cp /work/cmd/billing-env.sh /usr/local/bin/billing-env
 chmod +x /usr/local/bin/untar
 sleep() { :; }
 mysqladmin() { return 1; }

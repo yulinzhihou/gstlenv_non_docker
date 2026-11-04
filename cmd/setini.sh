@@ -15,6 +15,7 @@
 [ -f /root/.gs/.env ] && . /root/.gs/.env
 # 颜色代码
 [ -f /usr/local/bin/color ] && . /usr/local/bin/color
+umask 077
 
 if [ ! -f /root/.gs/.env ]; then
     echo -e "${GSISSUE}\r\n"
@@ -53,25 +54,21 @@ for ini_file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
     fi
 done
 
-if [ ! -d "${TLBB_HOME}/billing/" ]; then
-    mkdir -p "${TLBB_HOME}/billing/" &&
-        chown -R root:root "${TLBB_HOME}/billing" "${TLBB_PATH}" &&
-        chmod -R 777 "${TLBB_HOME}/billing" "${TLBB_PATH}"
-fi
-
-# billing 运行目录 (原生: run.sh 中的 /home/billing)
-if [ ! -d /home/billing ]; then
-    mkdir -p /home/billing
-fi
-# 如果服务端自带 billing 程序则直接用, 否则提示用户提供
-if [ -f /home/billing/billing ]; then
-    :
-elif [ -f "${TLBB_HOME}/billing/billing" ]; then
-    ln -sfn "${TLBB_HOME}/billing" /home/billing
+# Billing 与 untar/安装器共用部署逻辑; 上传包优先, 不覆盖运行配置。
+if [ "${IS_DLQ:-0}" = 0 ]; then
+    billing_loaded=0
+    for billing_helper in "$(dirname -- "${BASH_SOURCE[0]}")/billing-env.sh" /usr/local/bin/billing-env "${GS_PROJECT:-/root/.tlgame}/cmd/billing-env.sh"; do
+        [ -f "$billing_helper" ] || continue
+        source "$billing_helper" || exit 1
+        billing_loaded=1; break
+    done
+    [ "$billing_loaded" = 1 ] || { echo "缺少 Billing 部署组件, 请执行 upcmd 更新命令"; exit 1; }
+    billing_prepare "${GS_PROJECT:-/root/.tlgame}" "$TLBB_HOME/billing" \
+        /home/billing /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || exit 1
 else
-    echo -e "${CWARNING}未找到 billing 程序, 请将 billing 程序(billing 可执行文件)放入 /home/billing 目录, 否则登录器验证服务无法启动!${CEND}"
+    mkdir -p /home/billing || exit 1
+    echo "W机验证模式: 不部署或启动本机 Billing。"
 fi
-chmod -R 777 /home/billing 2>/dev/null
 
 # 游戏内注册=0，登录器注册=1
 if [ ${IS_DLQ:-0} -eq 0 ]; then
@@ -236,13 +233,15 @@ BILLING_GAME_SRC=0
 if [ "${TLBB_MYSQL_VERSION:-auto}" = "80" ] || [ "${TLBB_MYSQL_VERSION:-auto}" = "84" ]; then
     BILLING_GAME_SRC=1
 fi
-cat >/home/billing/config.yaml <<EOF
+billing_password_yaml="${DBPassword_NEW//\'/\'\'}"
+billing_config_tmp=$(mktemp /home/billing/.config.XXXXXX) || exit 1
+cat >"$billing_config_tmp" <<EOF || { rm -f "$billing_config_tmp"; echo "Billing 配置生成失败"; exit 1; }
 ip: 127.0.0.1
 port: ${BILLING_PORT:-21818}
 db_host: ${DBIP_NEW}
 db_port: ${DBPort_NEW}
 db_user: ${DBUser_NEW}
-db_password: ${DBPassword_NEW}
+db_password: '${billing_password_yaml}'
 db_name: web
 allow_old_password: false
 auto_reg: true
@@ -256,6 +255,11 @@ pc_max_client_count: 3
 bill_type: ${BILLING_GAME_SRC}
 
 EOF
+chmod 600 "$billing_config_tmp" && mv -f "$billing_config_tmp" /home/billing/config.yaml || {
+    rm -f "$billing_config_tmp"
+    echo "Billing 配置写入失败, 不继续提示开服成功"
+    exit 1
+}
 
 if [ ! -d "${TLBB_PATH}/Server" ]; then
     echo -e "${GSISSUE}\r\n"
@@ -264,15 +268,20 @@ if [ ! -d "${TLBB_PATH}/Server" ]; then
     exit 1
 else
     # 复制已经修改好的文件到指定目录
-    \cp -rf ${BASE_PATH}/tmp1 "${TLBB_PATH}/Server/Config/ServerInfo.ini"
-    \cp -rf ${BASE_PATH}/tmp2 "${TLBB_PATH}/Server/Config/LoginInfo.ini"
-    \cp -rf ${BASE_PATH}/tmp3 "${TLBB_PATH}/Server/Config/ShareMemInfo.ini"
-    \cp -rf /etc/odbc.ini ${BASE_PATH}/odbc.ini 2>/dev/null
-    \cp -rf /home/billing/config.yaml ${BASE_PATH}/config.yaml 2>/dev/null
+    install -m 600 "${BASE_PATH}/tmp1" "${TLBB_PATH}/Server/Config/ServerInfo.ini" &&
+        install -m 600 "${BASE_PATH}/tmp2" "${TLBB_PATH}/Server/Config/LoginInfo.ini" &&
+        install -m 600 "${BASE_PATH}/tmp3" "${TLBB_PATH}/Server/Config/ShareMemInfo.ini" &&
+        install -m 600 /etc/odbc.ini "${BASE_PATH}/odbc.ini" || {
+            echo -e "${CRED}服务端/ODBC 配置复制失败, 不继续提示开服成功${CEND}"
+            exit 1
+        }
+    install -m 600 /home/billing/config.yaml "${BASE_PATH}/config.yaml" || exit 1
 
     cd ${BASE_PATH}/ && rm -rf ${BASE_PATH}/tmp1 ${BASE_PATH}/tmp2 ${BASE_PATH}/tmp3
-    chmod -R 777 ${TLBB_HOME}/billing ${TLBB_PATH} /home/billing 2>/dev/null
+    chmod 600 /home/billing/config.yaml &&
+        { [ ! -f "${TLBB_PATH}/run.sh" ] || chmod u+x "${TLBB_PATH}/run.sh"; }
     if [ $? -eq 0 ]; then
+        [ "${IS_DLQ:-0}" != 0 ] || echo "Billing 程序及配置已就绪: /home/billing (尚未启动, 由 runtlbb 启动)"
         echo -e "${CSUCCESS}配置文件已经写入成功，可以执行【runtlbb】进行开服操作！！如需要配置在线GM，请执行【upgm】进行配置，再执行【runtlbb】进行开服操作！！${CEND}"
         exit 0
     else

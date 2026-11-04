@@ -11,7 +11,7 @@ upcmd_error() {
 }
 
 upcmd_validate() {
-    local dir="$1" file name
+    local dir="$1" file name assets
     for name in upcmd untar setini color gs gsctl; do
         [ -f "$dir/$name.sh" ] && [ ! -L "$dir/$name.sh" ] || {
             upcmd_error "命令包缺少普通文件: $name.sh"; return 1;
@@ -24,6 +24,17 @@ upcmd_validate() {
         }
         bash -n "$file" || { upcmd_error "语法检查未通过: $name"; return 1; }
     done
+    if [ -f "$dir/billing-env.sh" ]; then
+        assets="$(dirname -- "$dir")/assets/billing"
+        for name in billing32 billing64 SHA256SUMS LICENSE README.md; do
+            [ -f "$assets/$name" ] && [ ! -L "$assets/$name" ] || {
+                upcmd_error "Billing 资源缺失: $assets/$name"; return 1;
+            }
+        done
+        (cd "$assets" && sha256sum --check --status SHA256SUMS) || {
+            upcmd_error "Billing 资源校验失败"; return 1;
+        }
+    fi
 }
 
 upcmd_download() {
@@ -77,9 +88,9 @@ upcmd_fetch() {
 
 upcmd_deploy() (
     local source="$1" cmd_dir="$2" bin_dir="$3"
-    local project_stage="" bin_stage="" file name path backup digest manifest_digest
+    local project_stage="" bin_stage="" file name path backup digest manifest_digest assets asset_target
     local committed=0 changed=0 i rollback_failed=0
-    local destinations=() replacements=() backups=() files=() expected=()
+    local destinations=() replacements=() backups=() files=() expected=() modes=()
     umask 077
     upcmd_validate "$source" || return 1
     mkdir -p "$cmd_dir" "$bin_dir" || return 1
@@ -126,6 +137,7 @@ upcmd_deploy() (
         replacements+=("$project_stage/new/$name" "$bin_stage/new/${name%.sh}")
         digest=$(sha256sum "$project_stage/new/$name") || return 1
         expected+=("${digest%% *}" "${digest%% *}")
+        modes+=(755 755)
         for path in "$cmd_dir/$name" "$bin_dir/${name%.sh}"; do
             backup=""
             if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
@@ -141,6 +153,32 @@ upcmd_deploy() (
             backups+=("$backup")
         done
     done
+    if [ -f "$source/billing-env.sh" ]; then
+        assets="$(dirname -- "$source")/assets/billing"
+        asset_target="$(dirname -- "$cmd_dir")/assets/billing"
+        if [ -L "$(dirname -- "$asset_target")" ] || [ -L "$asset_target" ]; then
+            upcmd_error "Billing 资源目录不能是符号链接: $asset_target"; return 1
+        fi
+        mkdir -p "$asset_target" "$project_stage/new/assets" "$project_stage/old/assets" || return 1
+        for name in billing32 billing64 SHA256SUMS LICENSE README.md; do
+            path="$asset_target/$name"
+            if [ -L "$path" ] || { [ -e "$path" ] && [ ! -f "$path" ]; }; then
+                upcmd_error "拒绝覆盖非普通 Billing 资源: $path"; return 1
+            fi
+            install -m 644 -- "$assets/$name" "$project_stage/new/assets/$name" || return 1
+            backup=""
+            if [ -f "$path" ]; then
+                backup="$project_stage/old/assets/$name"
+                cp -p -- "$path" "$backup" || return 1
+            fi
+            destinations+=("$path")
+            replacements+=("$project_stage/new/assets/$name")
+            backups+=("$backup")
+            digest=$(sha256sum "$project_stage/new/assets/$name") || return 1
+            expected+=("${digest%% *}")
+            modes+=(644)
+        done
+    fi
     (cd "$project_stage/new" && sha256sum -- *.sh) > "$project_stage/manifest" || return 1
     manifest_digest=$(sha256sum "$project_stage/manifest") || return 1
     for ((i=0; i<${#destinations[@]}; i++)); do
@@ -153,7 +191,8 @@ upcmd_deploy() (
         digest=$(sha256sum "${destinations[i]}") || {
             upcmd_error "无法校验已安装命令, 正在恢复旧命令: ${destinations[i]}"; return 1;
         }
-        [ "${digest%% *}" = "${expected[i]}" ] && [ -x "${destinations[i]}" ] || {
+        [ "${digest%% *}" = "${expected[i]}" ] &&
+            [ "$(stat -c %a "${destinations[i]}")" = "${modes[i]}" ] || {
             upcmd_error "安装后校验失败, 正在恢复旧命令: ${destinations[i]}"; return 1;
         }
     done
@@ -161,6 +200,7 @@ upcmd_deploy() (
     committed=1
     printf '命令清单 SHA256: %s\n' "${manifest_digest%% *}"
     printf '已校验 %s 个命令; 本地源码: %s; 安装目录: %s\n' "${#files[@]}" "$cmd_dir" "$bin_dir"
+    [ -z "${asset_target:-}" ] || printf 'Billing 内置资源已同步并校验: %s (不替换正在使用的程序或配置)\n' "$asset_target"
     printf 'untar SHA256: %s\n' "${digest%% *}"
 )
 
@@ -170,7 +210,7 @@ upcmd_main() (
     case "${1:-}" in
         --help|-h)
             printf '%s\n' '用法: upcmd [--online|--local]' \
-                '默认在线下载原生项目 main 分支, 校验后更新命令及本地 cmd/。' \
+                '默认在线下载原生项目 main 分支, 校验后更新命令、本地 cmd/ 及 Billing 内置资源。' \
                 '--local: 不联网, 仅校验并重新部署本地 cmd/; 不表示获取了远程更新。'
             return 0;;
         ''|--online) :;;
