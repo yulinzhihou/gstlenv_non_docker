@@ -4,7 +4,7 @@
 > 当前环境相当于是开源 [gstlenv](https://gitee.com/yulinzhihou/gstlenv) 的**非 Docker 原生版**：
 > 命令体系（gs 原命令名）、环境配置（/root/.gs/.env）、数据目录（/tlgame）与 gstlenv **完全一致**，
 > 仅将容器安装替换为本机系统安装（在线 repo / 离线 rpm、deb 双模式）。
-> 项目地址：https://github.com/yulinzhihou/gstlenv ｜ https://gitee.com/yulinzhihou/gstlenv
+> 当前项目（非 Docker 原生版）：https://github.com/yulinzhihou/gstlenv_non_docker ｜ https://gitee.com/yulinzhihou/gstlenv_non_docker
 
 ---
 
@@ -128,6 +128,12 @@ put
 untar
 ```
 
+默认将 `/root/tlbb.tar.gz` 或 `/root/tlbb.zip` 部署到 `/tlgame/tlbb`（以配置中的
+`TLBB_PATH` 为准），支持包内直接包含 `Server/`、标准 `tlbb/Server/` 或额外嵌套目录。
+成功时会输出源包、目标目录、配置目录和原包保留位置；原包或目录结构有问题时返回失败，
+不再无条件提示成功。首次解压不要求已有旧端，换端前会先备份旧端。
+此次故障说明及仅更新命令的方法见 [untar 解压修复](docs/untar-repair-20261104.md)。
+
 - 第 5 步：设置配置文件 **（将配置文件进行覆盖，此配置文件会按照 `/root/.gs/.env` 文件里面定义的进行替换，没有更改的话则使用默认值）**
 
 ```bash
@@ -181,13 +187,14 @@ runtop
 
 -   技术交流群：902281567（原群被封）
 -   有需要可以进电报群（PS:不经常看）[https://t.me/gstlenv](https://t.me/gstlenv)
--   项目地址：https://github.com/yulinzhihou/gstlenv ｜ https://gitee.com/yulinzhihou/gstlenv
+-   当前原生版项目：https://github.com/yulinzhihou/gstlenv_non_docker ｜ https://gitee.com/yulinzhihou/gstlenv_non_docker
+-   Docker 版参考项目：https://github.com/yulinzhihou/gstlenv ｜ https://gitee.com/yulinzhihou/gstlenv
 
 ### 七、常见问题集合（不定期查看，欢迎反馈，我们一起把环境壮大）
 
-- [https://github.com/yulinzhihou/gstlenv/wiki](https://github.com/yulinzhihou/gstlenv/wiki)
-- [https://gitee.com/yulinzhihou/gstlenv/wiki](https://gitee.com/yulinzhihou/gstlenv/wiki)
-- 也可以提交 issue：https://gitee.com/yulinzhihou/gstlenv/issues
+- 当前原生版问题反馈：https://gitee.com/yulinzhihou/gstlenv_non_docker/issues
+- GitHub 反馈：https://github.com/yulinzhihou/gstlenv_non_docker/issues
+- Docker 版参考 Wiki：[GitHub](https://github.com/yulinzhihou/gstlenv/wiki) / [Gitee](https://gitee.com/yulinzhihou/gstlenv/wiki)（涉及 Docker 的操作不适用于本项目）
 
 ---
 

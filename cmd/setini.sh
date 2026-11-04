@@ -37,12 +37,21 @@ to_crlf() {
     fi
 }
 
-# 前置判断,如果服务端的路径都正确，就直接退出吧。
-if [ ! -d "${TLBB_PATH}/Server/" ]; then
+# 配置写入前检查实际目标, 不在缺失文件时继续生成空配置。
+if [ ! -d "${TLBB_PATH}/Server/Config" ]; then
     echo -e "${GSISSUE}\r\n"
-    echo "${CRED}请检查服务端的路径是否正确,必须是 /tlgame/tlbb/Server 不能是 /tlgame/tlbb2/Server, /tlgame/tlbbh${CEND}"
+    printf '%s\n' "${CRED}未找到服务端配置目录: ${TLBB_PATH}/Server/Config${CEND}"
+    echo "请先执行更新后的 untar, 确认它输出的服务端目录与 TLBB_PATH 一致。"
+    echo "默认读取 /root/tlbb.tar.gz 或 /root/tlbb.zip, 部署到 $TLBB_PATH。"
     exit 1
 fi
+for ini_file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
+    if [ ! -f "${TLBB_PATH}/Server/Config/$ini_file" ]; then
+        printf '%s\n' "${CRED}缺少服务端配置文件: ${TLBB_PATH}/Server/Config/$ini_file${CEND}"
+        echo -e "${GSISSUE}\r\n"
+        exit 1
+    fi
+done
 
 if [ ! -d "${TLBB_HOME}/billing/" ]; then
     mkdir -p "${TLBB_HOME}/billing/" &&
@@ -251,7 +260,7 @@ EOF
 if [ ! -d "${TLBB_PATH}/Server" ]; then
     echo -e "${GSISSUE}\r\n"
     echo -e "${CRED}未上传服务端执行解压操作; 正确操作：上传服务端压缩包 tlbb.tar.gz或者 tlbb.zip 到 /root 目录下，执行 untar 再执行本命令${CEND}"
-    echo -e "${CRED}上传了服务端也解压了，但服务端的目录名不正确：必须是 /tlgame/tlbb 不能是 /tlgame/tlbb2, /tlgame/tlbbhj${CEND}"
+    printf '%s\n' "${CRED}服务端目录已不存在: ${TLBB_PATH}/Server, 请检查解压结果${CEND}"
     exit 1
 else
     # 复制已经修改好的文件到指定目录

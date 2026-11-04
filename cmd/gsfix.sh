@@ -40,5 +40,5 @@ else
 fi
 # 4. 检查目录
 mkdir -p /tlgame/backup /tlgame/www/ow /tlgame/www/gm 2>/dev/null
-echo -e "${CSUCCESS}环境修复完成, 如有问题请提交: https://gitee.com/yulinzhihou/gstlenv/issues${CEND}"
+echo -e "${CSUCCESS}环境修复完成, 原生版问题反馈: https://gitee.com/yulinzhihou/gstlenv_non_docker/issues${CEND}"
 exit 0

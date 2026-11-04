@@ -92,7 +92,7 @@ main() {
                 else
                     echo -e "${CYELLOW}正在重构环境，换版本${CEND}"
                     # 解压新端
-                    untar
+                    untar || { echo -e "${CRED}解压失败, 已中止换端, 不重置数据库${CEND}"; exit 1; }
                     # 重置数据库
                     reset_db
                     # 写入配置
