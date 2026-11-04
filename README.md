@@ -133,6 +133,8 @@ untar
 成功时会输出源包、目标目录、配置目录和原包保留位置；原包或目录结构有问题时返回失败，
 不再无条件提示成功。首次解压不要求已有旧端，换端前会先备份旧端。
 此次故障说明及仅更新命令的方法见 [untar 解压修复](docs/untar-repair-20261104.md)。
+旧版 `upcmd` 仅复制本机旧脚本，不能自动获取修复；请先按上述说明一次性升级更新器。
+新版 `upcmd` 默认联网更新，`upcmd --local` 才是仅从本机源码重部署。
 
 - 第 5 步：设置配置文件 **（将配置文件进行覆盖，此配置文件会按照 `/root/.gs/.env` 文件里面定义的进行替换，没有更改的话则使用默认值）**
 
@@ -288,7 +290,7 @@ transfer                  # 重新构建环境版本（1=CS6+5.1 2=CS7+5.1 3=CS7
 | 10 | change | 容器换端 | 本机备份换端（untar→reset→setini→runtlbb） |
 | 11 | restart | docker restart | 本机重启数据库+服务端 |
 | 12 | gsbak | 容器内定时备份 | crontab 定时 mysqldump + 版本备份 |
-| 13 | upcmd | gitee 拉取最新命令 | 从环境包 cmd/ 重新部署命令到 /usr/local/bin |
+| 13 | upcmd | gitee 拉取最新命令 | 在线下载原生项目 main 命令，校验后同步源码 cmd/ 和 /usr/local/bin；--local 仅离线重部署 |
 | 14 | upgm | nginx 容器 + DBConfig.php | 生成 /tlgame/www/gm + DBConfig.php + 开启 GM 工具 |
 | 15 | upow | nginx 容器站点 | 创建 /tlgame/www/ow 开服网站目录 |
 | 16 | step | 容器内分步启动 | 解析 run.sh 分步启动进程 |

@@ -21,8 +21,12 @@
 echo -e "${CYELLOW}正在修复环境安装……${CEND}"
 # 1. 重新部署命令
 if [ -d "${GS_PROJECT:-/root/.tlgame}/cmd" ]; then
-    upcmd >/dev/null 2>&1
-    echo -e "${CSUCCESS}命令已重新部署${CEND}"
+    if /usr/local/bin/upcmd --local; then
+        echo -e "${CSUCCESS}本地命令已重新部署 (未联网更新)${CEND}"
+    else
+        echo -e "${CRED}命令重部署失败, 请先处理上述错误${CEND}"
+        exit 1
+    fi
 else
     echo -e "${CWARNING}未找到 cmd/ 目录, 跳过命令部署${CEND}"
 fi

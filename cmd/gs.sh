@@ -45,7 +45,7 @@ ${CYELLOW}###########################################
 #    10:change     换端                   
 #    11:restart    重启环境/服务          
 #    12:gsbak      定时备份数据           
-#    13:upcmd      重新部署全局命令       
+#    13:upcmd      在线更新全局命令
 #    14:upgm       配置在线GM网站         
 #    15:upow       配置开服网站           
 #    16:step       分步调试开服           
@@ -90,7 +90,7 @@ run_or_help() {
         change)   echo "${CGREEN}change: 换端${CEND}"; change;;
         restart)  echo "${CGREEN}restart: 重启环境/服务${CEND}"; restart;;
         gsbak)    echo "${CGREEN}gsbak: 定时备份数据${CEND}"; gsbak;;
-        upcmd)    echo "${CGREEN}upcmd: 重新部署全局命令${CEND}"; upcmd;;
+        upcmd)    echo "${CGREEN}upcmd: 在线下载并校验更新全局命令${CEND}"; upcmd;;
         upgm)     echo "${CGREEN}upgm: 配置在线GM网站${CEND}"; upgm;;
         upow)     echo "${CGREEN}upow: 配置开服网站${CEND}"; upow;;
         step)     echo "${CGREEN}step: 分步调试开服${CEND}"; step;;

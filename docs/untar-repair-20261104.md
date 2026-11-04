@@ -28,35 +28,51 @@
 
 ## 仅更新命令，不重装环境
 
-下面先下载并检查所有修改过的命令，再更新本地源码和全局命令，不修改数据库、密码或运行配置：
+### 为什么 upcmd 提示成功，untar 还是旧版
+
+旧 `upcmd` 只把 `${GS_PROJECT}/cmd/*.sh` 复制到 `/usr/local/bin`，完全没有联网拉取。
+本地源码旧，重复执行它仍然部署旧命令。“共 35 个命令”只表示复制计数，不是远程版本号；
+旧成功判断也只检查最后一次操作，不能证明整批命令成功。
+
+手动 `tar zxf tlbb.tar.gz -C /tlgame` 能展开，说明该包可以被 tar 读取。
+日志中仍出现“服务端文件【tlbb.tar.gz】已经解压成功”则是旧脚本的提示，
+不是本次修复后的“源压缩包 / 目标目录 / 服务端解压并校验成功”。
+另外可用 `type -a untar` 排查别名、函数及 PATH 中其他旧脚本的遮蔽。
+
+新版 `upcmd` 默认在线获取原生项目 `main` 快照，优先 GitHub，失败再尝试 Gitee；
+下载或校验均失败时返回失败，不悄悄回退到旧源码。它先检查所有命令的 Bash 语法，
+准备好两份命令及旧文件恢复副本，再同步本地源码 `cmd/` 和 `/usr/local/bin`，
+逐个比较内容与可执行权限。中途失败尝试恢复旧文件，只有全部校验通过才报成功，
+并打印来源、源码包/命令清单/untar 的 SHA256 和安装路径。
+更新有互斥锁；不运行安装器，不改 `.env`、密码、SQL、数据库或游戏目录。
+SHA256 用于识别下载和部署内容，不是独立签名或发行版本认证。
+
+`upcmd --local` 明确表示只离线重部署本地命令，不代表获取远程更新。
+`gsfix` 使用这个选项，并在命令部署失败时停止，不再隐藏错误。
+
+### 老机器的一次性升级
+
+旧的 `upcmd` 不会下载自身，不能只再次运行它。下面先下载并检查新版更新器，
+运行后由它整批更新命令；失败时不再继续执行解压。不重装环境：
 
 ```bash
 (
     set -e
-    project=/root/.tlgame
-    if [ -f /root/.gs/.env ]; then
-        source /root/.gs/.env
-        project="${GS_PROJECT:-$project}"
-    fi
-    [ -d "$project/cmd" ] || { echo "未找到源码目录: $project/cmd"; exit 1; }
-    tmp=$(mktemp -d)
-    trap 'rm -rf -- "$tmp"' EXIT
-    base=https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/cmd
-    for name in untar setini color gsfix change; do
-        curl -fsSL "$base/$name.sh" -o "$tmp/$name.sh"
-        bash -n "$tmp/$name.sh"
-    done
-    for name in untar setini color gsfix change; do
-        install -m 755 "$tmp/$name.sh" "$project/cmd/$name.sh"
-        install -m 755 "$tmp/$name.sh" "/usr/local/bin/$name"
-    done
-    echo "命令更新完成"
+    tmp=$(mktemp)
+    trap 'rm -f -- "$tmp"' EXIT
+    curl -fsSL --connect-timeout 15 --max-time 120 \
+        https://raw.githubusercontent.com/yulinzhihou/gstlenv_non_docker/main/cmd/upcmd.sh -o "$tmp"
+    bash -n "$tmp"
+    bash "$tmp"
 )
 ```
 
 确认更新成功后，先检查原包及配置，注意不要公开包含密码的整个 `.env`：
 
 ```bash
+hash -r
+type -a untar
+grep -n '解压并校验成功' /usr/local/bin/untar
 ls -lh /root/tlbb.tar.gz /root/tlbb.zip 2>/dev/null
 grep '^TLBB_PATH=' /root/.gs/.env
 find /tlgame -type d -path '*/Server/Config' -print 2>/dev/null
@@ -66,9 +82,13 @@ find /tlgame -type d -path '*/Server/Config' -print 2>/dev/null
 不必删除已有目录或重新上传：
 
 ```bash
-untar && setini
+/usr/local/bin/untar && /usr/local/bin/setini
 # 或: untar /root/实际保留的压缩包.tar.gz && setini
 ```
+
+如果已经手动展开到 `/tlgame/tlbb/Server/Config`，不必再次覆盖解压。
+先确认三份 INI 与实际配置路径，再执行 `setini`。如果服务端已在运行，换端前先停服。
+此后正常在线更新使用 `upcmd` 即可；只有明确想从本机源码重新部署才使用 `upcmd --local`。
 
 ## 验证
 
@@ -78,3 +98,8 @@ untar && setini
 `tests/smoke_archive_commands.sh` 已在一次性 CentOS Stream 9 和 10 容器中执行真实
 `untar`/`setini` 命令入口，验证默认上传路径、归一后的配置位置、缺失文件报错及原生 Issues。
 这些是合成服务端目录，不执行或验证用户实际游戏二进制。
+
+`tests/test_upcmd.sh` 覆盖两处目录同步、真实路径与哈希、语法/文件/下载失败、镜像回退、
+安装或校验失败回滚及权限保留。`tests/smoke_upcmd.sh` 在一次性容器中使用受控远程快照
+执行真实更新器（含自更新），随后真实运行 `untar` 验证上传文件进入 `/tlgame/tlbb`，
+并检查显式离线、下载失败、互斥锁、PATH 遮蔽提示及 `gsfix` 失败传播。
