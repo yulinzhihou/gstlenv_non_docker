@@ -693,7 +693,7 @@ rhel_config_odbc() {
     fi
     # 端类型检测: 武道四 v3 端 (Server 目录存在 luoluo 子目录) → 游戏库映射到 tlbbdb_10 (仅 3 库结构)
     local game_db="$main_db"
-    if [ "$has_t10" = "1" ] && ls -d /home/tlbb/tlbb*/Server/luoluo >/dev/null 2>&1; then
+    if [ "$has_t10" = "1" ] && [ -d "${TLBB_PATH:-/tlgame/tlbb}/Server/luoluo" ]; then
         game_db="tlbbdb_10"
         log "检测到武道四 v3 端 (luoluo 目录), 启用四段 DSN 映射"
     fi

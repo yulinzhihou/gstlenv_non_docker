@@ -26,6 +26,15 @@ fi
 BASE_PATH="${GS_PROJECT}/config"
 TLBB_HOME="${TLBB_HOME:-/tlgame}"
 TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+run_loaded=0
+for run_helper in "$(dirname -- "${BASH_SOURCE[0]}")/run-env.sh" /usr/local/bin/run-env "${GS_PROJECT:-/root/.tlgame}/cmd/run-env.sh"; do
+    [ -f "$run_helper" ] || continue
+    source "$run_helper" || exit 1
+    run_loaded=1; break
+done
+[ "$run_loaded" = 1 ] || { echo "缺少启动脚本检查组件，请执行 upcmd"; exit 1; }
+run_native_paths || exit 1
+BILLING_PATH="$TLBB_HOME/billing"
 mkdir -p "${BASE_PATH}"
 
 # 转换为 CRLF 行尾 (对齐 gstlenv unix2dos, TLBB ini 需 Windows 行尾)
@@ -54,6 +63,10 @@ for ini_file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
     fi
 done
 
+[ -f "$TLBB_PATH/run.sh" ] && [ ! -L "$TLBB_PATH/run.sh" ] || {
+    echo "缺少普通启动脚本 $TLBB_PATH/run.sh，请上传并修复 run.sh 后重试，尚未写入配置。"; exit 1;
+}
+
 # Billing 与 untar/安装器共用部署逻辑; 上传包优先, 不覆盖运行配置。
 if [ "${IS_DLQ:-0}" = 0 ]; then
     billing_loaded=0
@@ -63,32 +76,19 @@ if [ "${IS_DLQ:-0}" = 0 ]; then
         billing_loaded=1; break
     done
     [ "$billing_loaded" = 1 ] || { echo "缺少 Billing 部署组件, 请执行 upcmd 更新命令"; exit 1; }
-    billing_prepare "${GS_PROJECT:-/root/.tlgame}" "$TLBB_HOME/billing" \
-        /home/billing /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || exit 1
+    billing_prepare_native "${GS_PROJECT:-/root/.tlgame}" "$BILLING_PATH" \
+        /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || exit 1
 else
-    mkdir -p /home/billing || exit 1
     echo "W机验证模式: 不部署或启动本机 Billing。"
 fi
 
-# 游戏内注册=0，登录器注册=1
-if [ ${IS_DLQ:-0} -eq 0 ]; then
-    # 每次更新后，先重置更改过的文件: 追加 billing 启动命令到 run.sh
-    if [ -f "${TLBB_PATH}/run.sh" ]; then
-        cat ${TLBB_PATH}/run.sh | grep "cd /home/billing && ./billing up -d" >/dev/null 2>&1
-        if [ $? -eq 1 ]; then
-            # 确保文件末尾有换行符，避免命令被直接拼接到上一行
-            printf '\n' >>${TLBB_PATH}/run.sh
-            echo "" >>${TLBB_PATH}/run.sh
-            echo "cd /home/billing && ./billing up -d" >>${TLBB_PATH}/run.sh
-            echo "" >>${TLBB_PATH}/run.sh
-        fi
-    fi
-else
-    # 登录器注册模式: 本机(L机)不开 billing 验证
-    if [ -f "${TLBB_PATH}/run.sh" ]; then
-        sed -i "s/GS_BILLING/sleep 0/g" ${TLBB_PATH}/run.sh
-    fi
-fi
+local_billing=1
+[ "${IS_DLQ:-0}" = 0 ] || local_billing=0
+run_normalize "$TLBB_PATH/run.sh" "$TLBB_PATH" "$BILLING_PATH" \
+    "${BACKUP_DIR:-/tlgame/backup}" "$local_billing" || exit 1
+run_load "$TLBB_PATH/run.sh" "$TLBB_PATH" &&
+    run_validate "$TLBB_PATH" "$BILLING_PATH" "$local_billing" || exit 1
+echo "run.sh 路径及启动程序检查通过，可用 step --list 查看分步启动清单。"
 
 # 三个 ini 文件的替换
 MOTHER_IP="0.0.0.0"  # Mother区块的新IP
@@ -227,14 +227,15 @@ EOF
     done
 fi
 
-# 生成 billing config.yaml (原生: /home/billing, 与 run.sh 中的路径一致)
+# Billing runtime data belongs to /tlgame, not /home.
 # bill_type 0经典 1怀旧 (MySQL 8.0/8.4 源端视为怀旧/64位)
 BILLING_GAME_SRC=0
 if [ "${TLBB_MYSQL_VERSION:-auto}" = "80" ] || [ "${TLBB_MYSQL_VERSION:-auto}" = "84" ]; then
     BILLING_GAME_SRC=1
 fi
 billing_password_yaml="${DBPassword_NEW//\'/\'\'}"
-billing_config_tmp=$(mktemp /home/billing/.config.XXXXXX) || exit 1
+if [ "$local_billing" = 1 ]; then
+billing_config_tmp=$(mktemp "$BILLING_PATH/.config.XXXXXX") || exit 1
 cat >"$billing_config_tmp" <<EOF || { rm -f "$billing_config_tmp"; echo "Billing 配置生成失败"; exit 1; }
 ip: 127.0.0.1
 port: ${BILLING_PORT:-21818}
@@ -255,11 +256,12 @@ pc_max_client_count: 3
 bill_type: ${BILLING_GAME_SRC}
 
 EOF
-chmod 600 "$billing_config_tmp" && mv -f "$billing_config_tmp" /home/billing/config.yaml || {
+chmod 600 "$billing_config_tmp" && mv -f "$billing_config_tmp" "$BILLING_PATH/config.yaml" || {
     rm -f "$billing_config_tmp"
     echo "Billing 配置写入失败, 不继续提示开服成功"
     exit 1
 }
+fi
 
 if [ ! -d "${TLBB_PATH}/Server" ]; then
     echo -e "${GSISSUE}\r\n"
@@ -275,13 +277,13 @@ else
             echo -e "${CRED}服务端/ODBC 配置复制失败, 不继续提示开服成功${CEND}"
             exit 1
         }
-    install -m 600 /home/billing/config.yaml "${BASE_PATH}/config.yaml" || exit 1
+    [ "$local_billing" = 0 ] || install -m 600 "$BILLING_PATH/config.yaml" "${BASE_PATH}/config.yaml" || exit 1
 
     cd ${BASE_PATH}/ && rm -rf ${BASE_PATH}/tmp1 ${BASE_PATH}/tmp2 ${BASE_PATH}/tmp3
-    chmod 600 /home/billing/config.yaml &&
-        { [ ! -f "${TLBB_PATH}/run.sh" ] || chmod u+x "${TLBB_PATH}/run.sh"; }
+    { [ "$local_billing" = 0 ] || chmod 600 "$BILLING_PATH/config.yaml"; } &&
+        chmod u+x "${TLBB_PATH}/run.sh"
     if [ $? -eq 0 ]; then
-        [ "${IS_DLQ:-0}" != 0 ] || echo "Billing 程序及配置已就绪: /home/billing (尚未启动, 由 runtlbb 启动)"
+        [ "${IS_DLQ:-0}" != 0 ] || echo "Billing 程序及配置已就绪: $BILLING_PATH (尚未启动, 由 runtlbb 启动)"
         echo -e "${CSUCCESS}配置文件已经写入成功，可以执行【runtlbb】进行开服操作！！如需要配置在线GM，请执行【upgm】进行配置，再执行【runtlbb】进行开服操作！！${CEND}"
         exit 0
     else

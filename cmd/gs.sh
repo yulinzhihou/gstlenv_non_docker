@@ -79,7 +79,7 @@ run_or_help() {
     echo ""
     case "$name" in
         untar)    echo "${CGREEN}untar: 解压服务端压缩包(tlbb.tar.gz/tlbb.zip), 需上传到 /root${CEND}"; untar;;
-        setini)   echo "${CGREEN}setini: 自动设置服务器配置文件(3个ini + 数据库连接 + billing)${CEND}"; setini;;
+        setini)   echo "${CGREEN}setini: 统一 /tlgame 路径并检查 run.sh，再写入3个ini、数据库连接和 Billing 配置${CEND}"; setini;;
         runtlbb)  echo "${CGREEN}runtlbb: 运行一键服务端命令(调用 run.sh)${CEND}"; runtlbb;;
         runtop)   echo "${CGREEN}runtop: 按 run.sh 实时监控进程(CPU/内存/PID), q 退出; runtop --once 输出快照${CEND}"; runtop;;
         link)     echo "${CGREEN}link: 进入服务端目录命令行${CEND}"; link;;
@@ -93,7 +93,7 @@ run_or_help() {
         upcmd)    echo "${CGREEN}upcmd: 在线下载并校验更新全局命令${CEND}"; upcmd;;
         upgm)     echo "${CGREEN}upgm: 配置在线GM网站${CEND}"; upgm;;
         upow)     echo "${CGREEN}upow: 配置开服网站${CEND}"; upow;;
-        step)     echo "${CGREEN}step: 分步调试开服${CEND}"; step;;
+        step)     echo "${CGREEN}step: 按实际程序分步前台调试；step --list 查看编号，step --check 检查路径，step N 启动一个程序${CEND}"; step;;
         gstl)     echo "${CGREEN}gstl: 环境安装初始化${CEND}"; gstl;;
         backup)   echo "${CGREEN}backup: 手动备份数据库${CEND}"; backup;;
         close)    echo "${CGREEN}close: 关服${CEND}"; close;;

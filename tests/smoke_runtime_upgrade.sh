@@ -68,26 +68,29 @@ echo 'PASS: legacy weak credentials migrated, data preserved, old root/Redis pas
 
 # Exercise the real application writers with generated secrets in a private fixture.
 fixture=$(mktemp -d)
-mkdir -p "$fixture/game/Server/Config" "$fixture/game/Script" "$fixture/project"
+game=/tlgame/upgrade-fixture
+mkdir -p "$game/Server/Config" "$game/Script" "$fixture/project"
 cp -a /work/assets "$fixture/project/assets"
-printf '[Mother]\nIP=old\n[World]\nIP=old\n' > "$fixture/game/Server/Config/ServerInfo.ini"
+printf '[Mother]\nIP=old\n[World]\nIP=old\n' > "$game/Server/Config/ServerInfo.ini"
 for file in LoginInfo ShareMemInfo; do
-    printf '[System]\nDBIP=old\nDBPort=0\nDBName=old\nDBUser=old\nDBPassword=old\n' > "$fixture/game/Server/Config/$file.ini"
+    printf '[System]\nDBIP=old\nDBPort=0\nDBName=old\nDBUser=old\nDBPassword=old\n' > "$game/Server/Config/$file.ini"
 done
-printf 'GMDATA_ISOPEN_GMTOOLS=0\nGMDATA_PRIVATE_KEY="old"\n' > "$fixture/game/Script/ScriptGlobal.lua"
-printf 'GS_PROJECT=%q\nTLBB_PATH=%q\n' "$fixture/project" "$fixture/game" >> /root/.gs/.env
+printf 'GMDATA_ISOPEN_GMTOOLS=0\nGMDATA_PRIVATE_KEY="old"\n' > "$game/Script/ScriptGlobal.lua"
+cp /bin/bash "$game/Server/Server"
+printf '#!/bin/bash\ncd "$TLBB_PATH/Server"\n./Server &\n' > "$game/run.sh"
+printf 'GS_PROJECT=%q\nTLBB_PATH=%q\n' "$fixture/project" "$game" >> /root/.gs/.env
 bash /work/cmd/setini.sh
 bash /work/cmd/upgm.sh
 source /root/.gs/.env
 for file in LoginInfo ShareMemInfo; do
-    tr -d '\r' < "$fixture/game/Server/Config/$file.ini" | grep -Fqx "DBPassword=$TLBB_MYSQL_PASSWORD"
-    tr -d '\r' < "$fixture/game/Server/Config/$file.ini" | grep -qx 'DBUser=gs'
+    tr -d '\r' < "$game/Server/Config/$file.ini" | grep -Fqx "DBPassword=$TLBB_MYSQL_PASSWORD"
+    tr -d '\r' < "$game/Server/Config/$file.ini" | grep -qx 'DBUser=gs'
 done
 for dsn in tlbbdb tlbbdb_main tlbbdb_10 CHAR_DBTABASE; do
     printf 'SELECT 1;\n' | isql -b "$dsn" >/dev/null
 done
-grep -Fq "db_password: '$TLBB_MYSQL_PASSWORD'" /home/billing/config.yaml
-grep -Fqx "GMDATA_PRIVATE_KEY=\"$PRIVATE_KEY\"" "$fixture/game/Script/ScriptGlobal.lua"
+grep -Fq "db_password: '$TLBB_MYSQL_PASSWORD'" /tlgame/billing/config.yaml
+grep -Fqx "GMDATA_PRIVATE_KEY=\"$PRIVATE_KEY\"" "$game/Script/ScriptGlobal.lua"
 php -l /tlgame/www/gm/DBConfig.php
 php -r 'require "/tlgame/www/gm/DBConfig.php"; $db = new mysqli($DB_HOST, $DB_USER, $DB_PASS, $DB_NAME, $DB_PORT); exit($db->connect_errno ? 1 : 0);'
 [ "$(stat -c %a /etc/odbc.ini)" = 600 ]

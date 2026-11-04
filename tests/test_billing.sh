@@ -121,4 +121,55 @@ echo 'PASS: corrupt, traversal, ambiguous, symlinked and wrong-architecture uplo
     grep -q '内置资源缺失或校验失败' "$case_dir/corrupted.log"
 )
 echo 'PASS: host architecture selects 32/64-bit binaries independently of game/MySQL; unsupported hosts and corrupt built-ins are explicit failures'
+
+fixture canonical-fresh
+billing_prepare_native "$ROOT" "$case_dir/tlgame/billing" "$case_dir/billing.tar.gz" \
+    "$case_dir/backups" "$case_dir/home/billing" > "$case_dir/fresh.log"
+[ -d "$case_dir/tlgame/billing" ] && [ ! -L "$case_dir/tlgame/billing" ]
+[ ! -e "$case_dir/home/billing" ]
+same "$ROOT/assets/billing/billing64" "$case_dir/tlgame/billing/billing"
+
+fixture canonical-legacy
+mkdir -p "$case_dir/home/billing" "$case_dir/tlgame/billing"
+cp "$ROOT/assets/billing/billing64" "$case_dir/home/billing/billing"
+printf legacy-config > "$case_dir/home/billing/config.yaml"
+printf legacy-log > "$case_dir/home/billing/log.log"
+printf canonical-config > "$case_dir/tlgame/billing/config.yaml"
+billing_prepare_native "$ROOT" "$case_dir/tlgame/billing" "$case_dir/billing.tar.gz" \
+    "$case_dir/backups" "$case_dir/home/billing" > "$case_dir/migrate.log"
+[ "$(<"$case_dir/tlgame/billing/config.yaml")" = canonical-config ]
+[ "$(<"$case_dir/tlgame/billing/log.log")" = legacy-log ]
+[ "$(<"$case_dir/home/billing/config.yaml")" = legacy-config ]
+[ "$(<"$case_dir/home/billing/log.log")" = legacy-log ]
+same "$ROOT/assets/billing/billing64" "$case_dir/tlgame/billing/billing"
+[ "$(stat -c %a "$case_dir/tlgame/billing/config.yaml")" = 600 ]
+echo 'PASS: canonical runtime is a real /tlgame directory, fresh installs create no home alias, and migration retains old data and canonical conflicts'
+
+fixture canonical-linked-program
+mkdir -p "$case_dir/home/billing" "$case_dir/tlgame/billing"
+cp "$ROOT/assets/billing/billing64" "$case_dir/home/billing/billing"
+ln -s "$case_dir/home/billing/billing" "$case_dir/tlgame/billing/billing"
+billing_prepare_native "$ROOT" "$case_dir/tlgame/billing" "$case_dir/billing.tar.gz" \
+    "$case_dir/backups" "$case_dir/home/billing" > "$case_dir/materialized.log"
+[ -f "$case_dir/tlgame/billing/billing" ] && [ ! -L "$case_dir/tlgame/billing/billing" ]
+same "$ROOT/assets/billing/billing64" "$case_dir/tlgame/billing/billing"
+[ -f "$case_dir/home/billing/billing" ]
+echo 'PASS: a program link to the old home directory is materialized in the canonical directory without deleting the legacy program'
+(
+    fixture canonical-running-legacy
+    mkdir -p "$case_dir/home/billing"
+    cp "$(command -v bash)" "$case_dir/home/billing/billing"
+    mkfifo "$case_dir/wait"
+    exec 3<> "$case_dir/wait"
+    "$case_dir/home/billing/billing" -c 'read -r -t 60 -u 3 || :' &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+    sleep 0.1
+    if billing_prepare_native "$ROOT" "$case_dir/tlgame/billing" "$case_dir/billing.tar.gz" \
+        "$case_dir/backups" "$case_dir/home/billing" > "$case_dir/running.log" 2>&1; then exit 1; fi
+    grep -q '仍在运行，请先关服' "$case_dir/running.log"
+    [ ! -f "$case_dir/tlgame/billing/billing" ]
+    kill -0 "$pid"
+)
+echo 'PASS: a live legacy Billing process blocks migration and is never stopped automatically'
 echo 'All Billing deployment checks passed.'

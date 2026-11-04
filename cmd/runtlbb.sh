@@ -24,49 +24,50 @@ fi
 
 TLBB_HOME="${TLBB_HOME:-/tlgame}"
 TLBB_PATH="${TLBB_PATH:-/tlgame/tlbb}"
+run_loaded=0
+for run_helper in "$(dirname -- "${BASH_SOURCE[0]}")/run-env.sh" /usr/local/bin/run-env "${GS_PROJECT:-/root/.tlgame}/cmd/run-env.sh"; do
+    [ -f "$run_helper" ] || continue
+    source "$run_helper" || exit 1
+    run_loaded=1; break
+done
+[ "$run_loaded" = 1 ] || { echo '缺少启动检查组件，请执行 upcmd。'; exit 1; }
+run_native_paths || exit 1
+run_load "$TLBB_PATH/run.sh" "$TLBB_PATH" &&
+    run_validate "$TLBB_PATH" "$TLBB_HOME/billing" "$((1 - ${IS_DLQ:-0}))" || exit 1
 
-# 检测是否已开服
-SERVER_IS_RUN=$(pgrep -x Server 2>/dev/null | wc -l)
-WORLD_IS_RUN=$(pgrep -x World 2>/dev/null | wc -l)
-LOGIN_IS_RUN=$(pgrep -x Login 2>/dev/null | wc -l)
-SHAREMEM_IS_RUN=$(pgrep -x ShareMemory 2>/dev/null | wc -l)
-BILLING_IS_RUN=$(pgrep -x billing 2>/dev/null | wc -l)
+export TLBB_HOME TLBB_PATH
 echo "${CSUCCESS}正在检测是否已经开服……，请稍候……${CEND}"
-if [ ${SERVER_IS_RUN} -ge 1 ] || [ ${WORLD_IS_RUN} -ge 1 ] || [ ${LOGIN_IS_RUN} -ge 1 ] || [ ${SHAREMEM_IS_RUN} -ge 1 ] || [ ${BILLING_IS_RUN} -ge 1 ]; then
-    echo "${CRED}服务端好像正在运行，如果有疑问可以使用 [runtop] 进行查看，如果想继续执行，请先执行 [restart] 重启后再进行开服 [runtlbb] 操作${CEND}"
+for run_index in "${!RUN_NAMES[@]}"; do
+    run_find_pids "$run_index"
+    if [ "${#RUN_PIDS[@]}" -gt 0 ]; then
+        printf '启动项 %s 已运行 (PID: %s)，不重复开服；可用 runtop 查看。\n' "${RUN_NAMES[run_index]}" "${RUN_PIDS[*]}"
+        exit 1
+    fi
+done
+echo "${CSUCCESS}暂未发现之前运行过，正在开启……${CEND}"
+# 检查数据库是否初始化成功
+if ! mysqladmin ping >/dev/null 2>&1; then
+    echo "${CRED}数据库尚未就绪，请先检查 MySQL 服务及连接配置；不要直接重置数据库。${CEND}"
     exit 1
+fi
+cd "$TLBB_PATH" || exit 1
+nohup bash run.sh >/dev/null 2>&1 &
+
+if [ $? -eq 0 ]; then
+    # 删除因为改版本导致引擎启动失败的dump文件
+    cd "$TLBB_HOME" && rm -f -- core.* 2>/dev/null
+
+    # 启动日志备份定时任务
+    if [ -f /usr/local/bin/logbak ]; then
+        /bin/bash /usr/local/bin/logbak cron 1 10 >/dev/null 2>&1
+        echo -e "${CYELLOW}已自动启动日志备份定时任务，默认1小时备份一次，保留10份${CEND}"
+    fi
+
+    echo -e "${CSUCCESS}已提交 run.sh 后台启动请求，请等待后用【runtop】和【gslog】确认实际启动结果。${CEND}"
+    echo -e "${CWARNING}如果需要定时备份，请执行【gsbak】命令，默认1小时备份一次数据库和版本，保留10次备份数据！！${CEND}"
+    exit 0
 else
-    echo "${CSUCCESS}暂未发现之前运行过，正在开启……${CEND}"
-    # 检查数据库是否初始化成功
-    if ! mysqladmin ping >/dev/null 2>&1; then
-        echo "${CRED}环境未被初始化成功，请执行 [rebuild] 命令，进行重构${CEND}"
-        exit 1
-    fi
-    if [ ! -f "${TLBB_PATH}/run.sh" ]; then
-        echo -e "${GSISSUE}\r\n"
-        echo -e "${CRED}未找到服务端启动脚本 ${TLBB_PATH}/run.sh，请确认已经执行【untar】【setini】操作！${CEND}"
-        exit 1
-    fi
-    chmod -R 777 ${TLBB_HOME} &&
-        cd ${TLBB_PATH} &&
-        nohup bash run.sh >/dev/null 2>&1 &
-
-    if [ $? -eq 0 ]; then
-        # 删除因为改版本导致引擎启动失败的dump文件
-        cd ${TLBB_HOME} && rm -rf core.* 2>/dev/null
-
-        # 启动日志备份定时任务
-        if [ -f /usr/local/bin/logbak ]; then
-            /bin/bash /usr/local/bin/logbak cron 1 10 >/dev/null 2>&1
-            echo -e "${CYELLOW}已自动启动日志备份定时任务，默认1小时备份一次，保留10份${CEND}"
-        fi
-
-        echo -e "${CSUCCESS}已经成功启动服务端，请耐心等待几分钟后，建议使用：【runtop】查看开服的情况！！${CEND}"
-        echo -e "${CWARNING}如果需要定时备份，请执行【gsbak】命令，默认1小时备份一次数据库和版本，保留10次备份数据！！${CEND}"
-        exit 0
-    else
-        echo -e "${GSISSUE}\r\n"
-        echo -e "${CRED} 启动服务端失败！${CEND}"
-        exit 1
-    fi
+    echo -e "${GSISSUE}\r\n"
+    echo -e "${CRED} 启动服务端失败！${CEND}"
+    exit 1
 fi

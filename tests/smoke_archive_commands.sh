@@ -9,6 +9,8 @@ cp /work/cmd/color.sh /usr/local/bin/color
 for file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
     printf '[System]\nDBIP=old\n' > "/tmp/archive-fixture/wrapper/tlbb2/Server/Config/$file"
 done
+cp /bin/bash /tmp/archive-fixture/wrapper/tlbb2/Server/Server
+printf '#!/bin/bash\ncd /home/tlbb/Server\n./Server &\n' > /tmp/archive-fixture/wrapper/tlbb2/run.sh
 tar -czf /root/tlbb.tar.gz -C /tmp/archive-fixture .
 bash /work/cmd/untar.sh > /tmp/untar.log
 [ -f /tlgame/tlbb/Server/Config/LoginInfo.ini ]
@@ -24,13 +26,14 @@ grep -q 'gstlenv_non_docker/issues' /tmp/setini-missing-file.log
 mv /tmp/saved-LoginInfo.ini /tlgame/tlbb/Server/Config/LoginInfo.ini
 printf 'TLBB_PATH=/custom/missing-game\nGS_PROJECT=/tmp/gs-project\n' > /root/.gs/.env
 if bash /work/cmd/setini.sh > /tmp/setini-missing-dir.log 2>&1; then exit 1; fi
-grep -q '/custom/missing-game/Server/Config' /tmp/setini-missing-dir.log
+grep -q 'TLBB_PATH=/custom/missing-game' /tmp/setini-missing-dir.log
 ! grep -q 'gstlenv/issues' /tmp/setini-missing-dir.log
 echo 'PASS: actual setini command reports configured paths and native issue link before modifying configuration'
 
 printf 'TLBB_PATH=/tlgame/tlbb\nGS_PROJECT=/tmp/gs-project\nTL_MYSQL_PASSWORD=fixture-only\n' > /root/.gs/.env
 cp /work/cmd/untar.sh /usr/local/bin/untar
 cp /work/cmd/billing-env.sh /usr/local/bin/billing-env
+cp /work/cmd/run-env.sh /usr/local/bin/run-env
 chmod +x /usr/local/bin/untar
 sleep() { :; }
 mysqladmin() { return 1; }

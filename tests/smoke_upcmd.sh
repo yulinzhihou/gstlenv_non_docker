@@ -53,6 +53,8 @@ mkdir -p /tmp/game-upload/tlbb/Server/Config
 for file in ServerInfo.ini LoginInfo.ini ShareMemInfo.ini; do
     printf '[System]\nDBIP=fixture\n' > "/tmp/game-upload/tlbb/Server/Config/$file"
 done
+cp /bin/bash /tmp/game-upload/tlbb/Server/Server
+printf '#!/bin/bash\ncd /home/tlbb/Server\n./Server &\n' > /tmp/game-upload/tlbb/run.sh
 tar -czf /root/tlbb.tar.gz -C /tmp/game-upload tlbb
 untar > /tmp/new-untar.log
 grep -qx '服务端目录: /tlgame/tlbb' /tmp/new-untar.log
@@ -60,8 +62,10 @@ grep -qx '服务端目录: /tlgame/tlbb' /tmp/new-untar.log
 [ ! -f /root/tlbb.tar.gz ]
 echo 'PASS: untar after upcmd really deploys the uploaded archive into /tlgame/tlbb'
 
+mv /tlgame/tlbb/run.sh /tmp/saved-run.sh
 if runtop --once > /tmp/no-run.log 2>&1; then exit 1; fi
-grep -q '无法读取启动脚本' /tmp/no-run.log
+grep -q '无法读取普通启动脚本' /tmp/no-run.log
+mv /tmp/saved-run.sh /tlgame/tlbb/run.sh
 cp /bin/bash /tlgame/tlbb/Server/Server
 cat > /tlgame/tlbb/run.sh <<'RUN'
 cd "$TLBB_PATH/Server"

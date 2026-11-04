@@ -131,6 +131,14 @@ untar_main() {
         source /root/.gs/.env || { untar_error "读取 /root/.gs/.env 失败, 不执行解压"; return 1; }
     fi
     [ -f /usr/local/bin/color ] && source /usr/local/bin/color
+    local run_helper run_loaded=0 local_billing=1
+    for run_helper in "$(dirname -- "${BASH_SOURCE[0]}")/run-env.sh" /usr/local/bin/run-env "${GS_PROJECT:-/root/.tlgame}/cmd/run-env.sh"; do
+        [ -f "$run_helper" ] || continue
+        source "$run_helper" || return 1
+        run_loaded=1; break
+    done
+    [ "$run_loaded" = 1 ] || { echo '缺少 run.sh 检查组件，请执行 upcmd。' >&2; return 1; }
+    run_native_paths || return 1
     local archive="${1:-}"
     [ "$#" -le 1 ] || { untar_error "用法: untar [压缩包路径]"; return 1; }
     if [ -z "$archive" ]; then
@@ -148,12 +156,21 @@ untar_main() {
             loaded=1; break
         done
         [ "$loaded" = 1 ] || { untar_error "缺少 Billing 部署组件, 请执行 upcmd 更新命令"; return 1; }
-        billing_prepare "${GS_PROJECT:-/root/.tlgame}" "${TLBB_HOME:-/tlgame}/billing" \
-            /home/billing /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || return 1
+        billing_prepare_native "${GS_PROJECT:-/root/.tlgame}" "${TLBB_HOME:-/tlgame}/billing" \
+            /root/billing.tar.gz "${BACKUP_DIR:-/tlgame/backup}" || return 1
     else
         printf 'W机验证模式: 不部署或启动本机 Billing。\n'
     fi
     untar_deploy "$archive" "${TLBB_PATH:-${TLBB_HOME:-/tlgame}/tlbb}" "${BACKUP_DIR:-/root}" || return 1
+    local game="$TLBB_PATH"
+    [ "${IS_DLQ:-0}" = 0 ] || local_billing=0
+    if ! run_normalize "$game/run.sh" "$game" "${TLBB_HOME:-/tlgame}/billing" \
+        "${BACKUP_DIR:-/tlgame/backup}" "$local_billing" ||
+        ! run_load "$game/run.sh" "$game" ||
+        ! run_validate "$game" "${TLBB_HOME:-/tlgame}/billing" "$local_billing"; then
+        echo '服务端已解压，但 run.sh 检查未通过；请修复上列问题后执行 setini，暂勿开服。' >&2
+        return 1
+    fi
     printf '%s\n' "${CSUCCESS:-}服务端文件已经解压成功！接下来执行【setini】写入配置文件；如需在线GM, 执行【upgm】配置, 最后执行【runtlbb】开服。${CEND:-}"
 }
 

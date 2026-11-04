@@ -141,12 +141,20 @@ untar
 包内默认配置不会覆盖现有密码。已解压服务端时只需 `setini`，不必重复解压。
 旧更新器首次升级请执行 `upcmd && upcmd`，以同步新增的 Billing 资源。
 完整优先级、备份及升级方法见 [Billing 部署说明](docs/billing-deploy-20261104.md)。
+游戏程序统一在 `/tlgame/tlbb`，Billing 统一在 `/tlgame/billing`，不再通过 `/home` 路径启动。
+`untar`、`setini` 会备份并替换 `run.sh` 中的 `/home/tlbb`、`/home/tlbb/tlbb1`、
+`/home/billing` 旧路径；缺失程序、目录或 hook 会明确报错并要求修复 `run.sh`。
+分步启动与迁移说明见 [启动路径与 step 命令](docs/startup-steps-20261104.md)。
 
 - 第 5 步：设置配置文件 **（将配置文件进行覆盖，此配置文件会按照 `/root/.gs/.env` 文件里面定义的进行替换，没有更改的话则使用默认值）**
 
 ```bash
 setini
 ```
+
+`setini` 在写入配置前检查 `run.sh` 的实际路径、可执行文件和 `LD_PRELOAD` 文件。
+本机验证模式下，缺少 Billing 启动命令时会补充一条，已有启动项不重复追加。
+检查失败不写入 INI/ODBC/Billing 配置，也不启动程序，请按提示修复后再执行。
 
 - 第 6 步：开启服务端，等待结果
 
@@ -266,7 +274,9 @@ delbak 5                  # 删除旧备份（保留 5 份）
 logbak cron 1 10          # 定时日志备份（1 小时一次，保留 10 份）
 gslog                     # 查看服务端日志
 rmlog                     # 清除服务端日志
-step                      # 分步调试开服
+step --list               # 查看 run.sh 的实际程序、完整路径、命令和步骤编号
+step --check              # 仅检查启动路径/程序/hook，不启动
+step 1                    # 前台调试一个步骤（编号以 --list 为准）
 upgm                      # 配置在线 GM 网站
 upow                      # 配置开服网站
 curgs                     # 查看当前环境配置
@@ -299,7 +309,7 @@ transfer                  # 重新构建环境版本（1=CS6+5.1 2=CS7+5.1 3=CS7
 | 13 | upcmd | gitee 拉取最新命令 | 在线下载原生项目 main 命令，校验后同步源码 cmd/ 和 /usr/local/bin；--local 仅离线重部署 |
 | 14 | upgm | nginx 容器 + DBConfig.php | 生成 /tlgame/www/gm + DBConfig.php + 开启 GM 工具 |
 | 15 | upow | nginx 容器站点 | 创建 /tlgame/www/ow 开服网站目录 |
-| 16 | step | 容器内分步启动 | 解析 run.sh 分步启动进程 |
+| 16 | step | 容器内分步启动 | 按实际命令排序，step N 前台调试；--list 查看，--check 检查 |
 | 17 | gstl | 下载镜像 compose up | 检测环境 → 显示配置(curgs) + 虚拟内存(swap) 提示 |
 | 18 | backup | docker exec mysqldump | 本机 mysqldump（0=全部 1=版本 2=数据库） |
 | 19 | close | docker stop | 本机关服 |

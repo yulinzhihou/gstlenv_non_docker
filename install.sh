@@ -315,7 +315,7 @@ finish_banner() {
     echo "  ODBC   : ${TLBB_ODBC_BITS:-自动} 位 | ${TLBB_ODBC_DRIVER:-/etc/odbc.ini}"
     command -v valkey-cli >/dev/null 2>&1 && echo "  Redis兼容服务: valkey.service | 客户端: valkey-cli (不是 redis-cli)"
     echo "  自启动 : 已安装的数据库、Nginx、PHP-FPM、Redis/Valkey 已启用并检查"
-    echo "  Billing: 程序已部署到 /home/billing; /root/billing.tar.gz 优先于环境内置程序"
+    echo "  Billing: 程序已部署到 /tlgame/billing; /root/billing.tar.gz 优先于环境内置程序"
     echo "  服务端 : 上传 tlbb.tar.gz 到 /root 后执行: untar"
     echo "  启动   : setini && runtlbb   状态: runtop"
     echo "  帮助   : gs (命令帮助)  /  gsctl <命令> (统一入口)"
@@ -447,7 +447,7 @@ main() {
     esac
 
     gen_env || die "运行配置保存失败, 凭据仍保存在私有 pending 文件中"
-    billing_prepare "$PKG_ROOT" /tlgame/billing /home/billing /root/billing.tar.gz /tlgame/backup ||
+    billing_prepare_native "$PKG_ROOT" /tlgame/billing /root/billing.tar.gz /tlgame/backup ||
         die "Billing 程序部署失败, 不继续提示环境安装完成"
     enable_installed_services || die "部分环境服务未能设置开机自启, 请检查上方错误"
     install_cmd

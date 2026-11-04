@@ -60,8 +60,8 @@ while :; do
             case "$num" in
             '1')
                 INPUTNAME='billing'
-                if [ -f "/home/billing/log.log" ] || [ -f "/tlgame/billing/log.log" ]; then
-                    tail -f /home/billing/log.log 2>/dev/null || tail -f /tlgame/billing/log.log 2>/dev/null
+                if [ -f "${TLBB_HOME:-/tlgame}/billing/log.log" ]; then
+                    tail -f "${TLBB_HOME:-/tlgame}/billing/log.log"
                 else
                     echo -e "${CRED}未发现日志文件，请按 CTRL+C 退出！${CEND}"
                 fi

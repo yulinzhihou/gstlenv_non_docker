@@ -12,7 +12,7 @@ upcmd_error() {
 
 upcmd_validate() {
     local dir="$1" file name assets
-    for name in upcmd untar setini color gs gsctl; do
+    for name in upcmd untar setini color gs gsctl run-env step runtop; do
         [ -f "$dir/$name.sh" ] && [ ! -L "$dir/$name.sh" ] || {
             upcmd_error "命令包缺少普通文件: $name.sh"; return 1;
         }

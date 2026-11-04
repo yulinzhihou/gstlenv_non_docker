@@ -68,7 +68,9 @@ billing_prepare() (
     fi
     if [ ! -e "$runtime" ]; then
         mkdir -p -- "$storage" "$(dirname -- "$runtime")" || return 1
-        ln -sT -- "$storage" "$runtime" || return 1
+        if [ "$(readlink -m -- "$storage")" != "$(readlink -m -- "$runtime")" ]; then
+            ln -sT -- "$storage" "$runtime" || return 1
+        fi
     fi
     [ -d "$runtime" ] || { billing_error "运行目录不是目录: $runtime"; return 1; }
     chmod go-w -- "$runtime" || return 1
@@ -111,7 +113,7 @@ billing_prepare() (
     digest=$(sha256sum "$work/new") || return 1
     old_digest=""
     [ ! -f "$destination" ] || old_digest=$(sha256sum "$destination") || return 1
-    if [ "${digest%% *}" != "${old_digest%% *}" ]; then
+    if [ -L "$destination" ] || [ "${digest%% *}" != "${old_digest%% *}" ]; then
         if [ -f "$destination" ] || [ -L "$destination" ]; then
             mkdir -p -- "$backups" || return 1
             tag="$(date +%Y%m%d%H%M%S)-${work##*.}"
@@ -125,6 +127,51 @@ billing_prepare() (
     printf 'Billing SHA256: %s\n' "${digest%% *}"
     printf 'Billing 未自动启动; 执行【setini】写入配置后, 再执行【runtlbb】。\n'
 )
+
+billing_copy_missing() (
+    local source="$1" target="$2" entry name
+    shopt -s dotglob nullglob
+    [ -d "$source" ] && [ -r "$source" ] && [ -x "$source" ] || return 1
+    for entry in "$source"/*; do
+        name="${entry##*/}"
+        if [ -e "$target/$name" ] || [ -L "$target/$name" ]; then
+            if [ -d "$entry" ] && [ ! -L "$entry" ] &&
+                [ -d "$target/$name" ] && [ ! -L "$target/$name" ]; then
+                billing_copy_missing "$entry" "$target/$name" || return 1
+            fi
+        else
+            cp -a -- "$entry" "$target/$name" || return 1
+        fi
+    done
+)
+
+billing_prepare_native() {
+    local project="$1" storage="$2" upload="$3" backups="$4" legacy="${5:-/home/billing}"
+    local proc exe legacy_exe
+    [ ! -L "$storage" ] || { billing_error "统一运行目录不能是符号链接: $storage"; return 1; }
+    mkdir -p -- "$storage" || return 1
+    if [ -d "$legacy" ] && [ "$(readlink -m -- "$legacy")" != "$(readlink -m -- "$storage")" ] &&
+        [ ! -f "$storage/.legacy-imported" ]; then
+        legacy_exe=$(readlink -m -- "$legacy/billing") || return 1
+        for proc in /proc/[0-9]*/exe; do
+            exe=$(readlink -- "$proc" 2>/dev/null) || continue
+            if [ "${exe% (deleted)}" = "$legacy_exe" ]; then
+                billing_error "旧目录 $legacy 的 Billing 仍在运行，请先关服，再迁移到 $storage"
+                return 1
+            fi
+        done
+        # Preserve existing canonical files and retain the entire legacy tree.
+        # Never delete old credentials/logs or replace them with package defaults.
+        billing_copy_missing "$legacy" "$storage" || { billing_error "旧目录复制失败，原目录未删除"; return 1; }
+        touch "$storage/.legacy-imported" || return 1
+        chmod 600 "$storage/.legacy-imported" || return 1
+        printf 'Billing 旧数据已复制到 %s (已有同名文件优先保留)，原目录 %s 未删除。\n' "$storage" "$legacy"
+    fi
+    if [ -f "$storage/config.yaml" ] && [ ! -L "$storage/config.yaml" ]; then
+        chmod 600 "$storage/config.yaml" || return 1
+    fi
+    billing_prepare "$project" "$storage" "$storage" "$upload" "$backups"
+}
 
 if [ "${BASH_SOURCE[0]}" = "$0" ]; then
     printf '%s\n' '这是 Billing 公共部署组件, 请使用 untar 或 setini。' >&2
