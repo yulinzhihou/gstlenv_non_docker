@@ -36,7 +36,7 @@ ${CYELLOW}###########################################
 #    01:untar      解压服务端             
 #    02:setini     配置ini文件            
 #    03:runtlbb    开启服务端             
-#    04:runtop     查看开服状态           
+#    04:runtop     实时监控开服进程
 #    05:link       连接服务端目录         
 #    06:swap       增加虚拟缓存           
 #    07:rebuild    重构环境               
@@ -81,7 +81,7 @@ run_or_help() {
         untar)    echo "${CGREEN}untar: 解压服务端压缩包(tlbb.tar.gz/tlbb.zip), 需上传到 /root${CEND}"; untar;;
         setini)   echo "${CGREEN}setini: 自动设置服务器配置文件(3个ini + 数据库连接 + billing)${CEND}"; setini;;
         runtlbb)  echo "${CGREEN}runtlbb: 运行一键服务端命令(调用 run.sh)${CEND}"; runtlbb;;
-        runtop)   echo "${CGREEN}runtop: 查看开服状态(ShareMemory/Login/World/Server 进程)${CEND}"; runtop;;
+        runtop)   echo "${CGREEN}runtop: 按 run.sh 实时监控进程(CPU/内存/PID), q 退出; runtop --once 输出快照${CEND}"; runtop;;
         link)     echo "${CGREEN}link: 进入服务端目录命令行${CEND}"; link;;
         swap)     echo "${CGREEN}swap: 增加虚拟缓存${CEND}"; swap;;
         rebuild)  echo "${CGREEN}rebuild: 重构环境${CEND}"; rebuild;;

@@ -23,7 +23,7 @@ if [ $# -eq 0 ]; then
     echo "  gsctl untar              解压服务端"
     echo "  gsctl setini             配置服务端 ini"
     echo "  gsctl runtlbb            开启服务端"
-    echo "  gsctl runtop             查看开服状态"
+    echo "  gsctl runtop             按 run.sh 实时监控开服进程 (q 退出)"
     echo "  gsctl setconfig          重新设置配置参数"
     echo "  gsctl gs 01              查看 gs 命令帮助并执行"
     echo "查看全部命令帮助: gs"

@@ -60,6 +60,22 @@ grep -qx '服务端目录: /tlgame/tlbb' /tmp/new-untar.log
 [ ! -f /root/tlbb.tar.gz ]
 echo 'PASS: untar after upcmd really deploys the uploaded archive into /tlgame/tlbb'
 
+if runtop --once > /tmp/no-run.log 2>&1; then exit 1; fi
+grep -q '无法读取启动脚本' /tmp/no-run.log
+cp /bin/bash /tlgame/tlbb/Server/Server
+cat > /tlgame/tlbb/run.sh <<'RUN'
+cd "$TLBB_PATH/Server"
+./Server &
+./Missing &
+RUN
+runtop --once > /tmp/runtop-once.log
+grep -Eq '^Server +STOP ' /tmp/runtop-once.log
+grep -Eq '^Missing +MISSING ' /tmp/runtop-once.log
+gsctl runtop --once --interval 1 > /tmp/gsctl-runtop.log
+grep -Eq '^Server +STOP ' /tmp/gsctl-runtop.log
+same_content /tmp/env-before /root/.gs/.env
+echo 'PASS: updated runtop and gsctl use the configured run.sh without starting processes or changing .env'
+
 requests=$(wc -l < /tmp/update-requests)
 upcmd --local > /tmp/upcmd-local.log
 grep -q '本地命令重部署成功' /tmp/upcmd-local.log

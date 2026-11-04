@@ -287,7 +287,7 @@ transfer                  # 重新构建环境版本（1=CS6+5.1 2=CS7+5.1 3=CS7
 | 01 | untar | docker exec 解压 | tar/unzip 解压到 /tlgame/tlbb |
 | 02 | setini | docker exec 写 ini | 写 ServerInfo/LoginInfo/ShareMemInfo + odbc.ini + billing config.yaml |
 | 03 | runtlbb | docker start 容器 | nohup bash run.sh 后台启动 |
-| 04 | runtop | docker ps 容器状态 | 检查 ShareMemory/Login/World/Server 进程与端口 |
+| 04 | runtop | docker ps 容器状态 | 按 run.sh 实时监控启动项的状态、PID、CPU、内存、运行时间; q 退出，--once 快照 |
 | 05 | link | docker-compose exec 进容器 | 直接进入 /tlgame/tlbb 服务端目录（原生无容器） |
 | 06 | swap | 容器内加 swap | 本机增加虚拟内存（/usr/swap/swapfile，默认 4G） |
 | 07 | rebuild | 重建容器 | 重构本机环境（备份→重置数据库→还原→写配置） |
